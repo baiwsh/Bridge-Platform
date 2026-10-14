@@ -1,73 +1,22 @@
-# React + TypeScript + Vite
+# 桥牌汇 BridgeHub · 应用目录
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+项目说明、功能特性、界面截图与快速开始请见仓库根目录的 [README.md](../README.md)。
 
-Currently, two official plugins are available:
+本目录要点：
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- `src/` —— 前端源码（React 19 + TypeScript + Vite + Tailwind CSS + shadcn/ui）
+- `server/` —— 后端源码（Express + ws，REST `/api/*` + WebSocket `/ws`）
+- `deploy/` —— 部署资产：`Dockerfile`、`nginx.conf`、`bridgehub.service`、`setup-nginx.sh` 等
+- `docs/` —— [部署手册](docs/部署手册.pdf) 与 [用户使用手册](docs/用户使用手册.pdf)（含 Markdown 源文件）
+- `DEPLOYMENT.md` —— Ubuntu 裸机 / Docker 部署详细指南
 
-## React Compiler
+## 常用命令
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
-
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm ci               # 安装依赖（Node.js >= 20）
+npm run dev          # 前端开发服务器（Vite）
+npm run server       # 后端开发服务（REST + WebSocket，默认 :8100）
+npm run build        # 构建前端 -> dist/
+npm run build:server # 打包后端 -> dist-server/index.js
+npm start            # 生产模式：单进程服务前端 + 后端（默认 :8100）
 ```
