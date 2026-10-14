@@ -1,0 +1,16 @@
+[Unit]
+Description=BridgeHub 桥牌汇服务
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/bridgehub/app
+Environment=PORT=8100
+Environment=BRIDGEHUB_DATA=/var/lib/bridgehub
+ExecStart=/usr/bin/node dist-server/index.js
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
