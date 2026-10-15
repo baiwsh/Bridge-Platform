@@ -14,7 +14,7 @@ import {
   type Seat,
   type Vul,
 } from '@/lib/bridge'
-import { cardId, dealHands, type CardT, type Suit } from '@/lib/cards'
+import { cardId, dealHands, hcp, type CardT, type Suit } from '@/lib/cards'
 import {
   auctionOver,
   chooseBid,
@@ -31,7 +31,7 @@ import {
 } from '@/lib/game'
 import type { BiddingSystem } from '@/lib/data'
 import type { ScoreRowMsg } from '@/lib/protocol'
-import { AuctionCells, BiddingBox, PlayingCard as PlayingCardView, ResultCard, SEAT_CN, SeatArea, type SeatPlayer } from './game-ui'
+import { AuctionPanel, BiddingBox, PlayingCard as PlayingCardView, ResultCard, SEAT_CN, SeatArea, type SeatPlayer } from './game-ui'
 import { cn } from '@/lib/utils'
 
 export type PlayerInfo = SeatPlayer
@@ -236,14 +236,25 @@ export default function GameTable({
             onPlay={(card) => setGs((prev) => applyPlay(prev, seat, card))}
             isUser={seat === userSeat}
             isDummy={seat === dummySeat && gs.phase === 'play'}
+            hcp={seat === userSeat && gs.hands[seat].length > 0 ? hcp(gs.hands[seat]) : null}
           />
         ))}
 
         <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-          {gs.phase === 'bidding' && userBiddingTurn ? (
-            <div className="w-64 max-w-[calc(100vw-4rem)] max-sm:-translate-y-8">
-              <div className="mb-1 text-center text-xs font-medium text-amber-300">轮到你叫牌</div>
-              <BiddingBox auction={gs.auction} seat={userSeat} onCall={(c) => setGs((prev) => applyBid(prev, c))} />
+          {gs.phase === 'bidding' ? (
+            <div className="flex max-h-[92%] flex-col items-center gap-2 overflow-y-auto max-sm:-translate-y-4">
+              <AuctionPanel
+                auction={gs.auction}
+                dealer={gs.dealer}
+                system={system}
+                waiting={userBiddingTurn ? undefined : `等待 ${SEAT_CN[gs.turn]} 叫牌…`}
+              />
+              {userBiddingTurn && (
+                <>
+                  <div className="text-center text-xs font-medium text-amber-300">轮到你叫牌</div>
+                  <BiddingBox auction={gs.auction} seat={userSeat} onCall={(c) => setGs((prev) => applyBid(prev, c))} />
+                </>
+              )}
             </div>
           ) : gs.phase === 'scored' && gs.result ? (
             <ResultCard
@@ -257,21 +268,30 @@ export default function GameTable({
               onExit={onExit}
             />
           ) : (
-            <div className="relative h-36 w-44 sm:h-44 sm:w-56">
-              {gs.trick.map((p) => {
-                const pos = posOf(p.seat)
-                const offset = { bottom: 'left-1/2 top-[58%] -translate-x-1/2', top: 'left-1/2 top-[6%] -translate-x-1/2', left: 'left-[8%] top-1/2 -translate-y-1/2', right: 'right-[8%] top-1/2 -translate-y-1/2' }[pos]
-                return (
-                  <div key={cardId(p.card)} className={cn('absolute', offset)}>
-                    <PlayingCardView card={p.card} />
-                  </div>
-                )
-              })}
-              {gs.trick.length === 0 && (
-                <div className="flex h-full items-center justify-center text-center text-xs text-emerald-200/60">
-                  {gs.phase === 'bidding' ? '叫牌进行中…' : userPlayTurn ? '轮到你出牌' : '对局进行中…'}
+            <div className="flex flex-col items-center gap-2">
+              {gs.contract && (
+                <div className="rounded-full bg-emerald-950/80 px-3 py-1 text-xs whitespace-nowrap text-emerald-100 shadow">
+                  定约 <b className={cn((gs.contract.strain === 'H' || gs.contract.strain === 'D') && 'text-rose-300')}>
+                    {describeContract({ ...gs.contract, tricks: 0, vul: gs.vul }).split(' ').slice(0, -1).join(' ')}
+                  </b> · {SEAT_CN[gs.contract.declarer]} 庄
                 </div>
               )}
+              <div className="relative h-36 w-44 sm:h-44 sm:w-56">
+                {gs.trick.map((p) => {
+                  const pos = posOf(p.seat)
+                  const offset = { bottom: 'left-1/2 top-[58%] -translate-x-1/2', top: 'left-1/2 top-[6%] -translate-x-1/2', left: 'left-[8%] top-1/2 -translate-y-1/2', right: 'right-[8%] top-1/2 -translate-y-1/2' }[pos]
+                  return (
+                    <div key={cardId(p.card)} className={cn('absolute', offset)}>
+                      <PlayingCardView card={p.card} />
+                    </div>
+                  )
+                })}
+                {gs.trick.length === 0 && (
+                  <div className="flex h-full items-center justify-center text-center text-xs text-emerald-200/60">
+                    {userPlayTurn ? '轮到你出牌' : '对局进行中…'}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -284,29 +304,6 @@ export default function GameTable({
       </div>
 
       <div className="space-y-3">
-        <Card>
-          <CardContent className="p-3">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-sm font-semibold">叫牌过程</span>
-              <Badge variant="outline" className="text-xs">{system === 'precision' ? '精确制' : '自然制'}</Badge>
-            </div>
-            <div className="grid grid-cols-4 gap-1 text-center text-xs">
-              {(['N', 'E', 'S', 'W'] as Seat[]).map((s) => (
-                <div key={s} className={cn('rounded py-0.5 font-medium', s === gs.dealer ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/50 dark:text-amber-200' : 'bg-muted')}>
-                  {SEAT_CN[s]}
-                </div>
-              ))}
-              <AuctionCells auction={gs.auction} dealer={gs.dealer} system={system} />
-            </div>
-            {gs.contract && (
-              <div className="mt-2 rounded-lg bg-emerald-50 p-2 text-center text-sm dark:bg-emerald-900/40">
-                定约：<b className={cn((gs.contract.strain === 'H' || gs.contract.strain === 'D') && 'text-rose-600')}>{describeContract({ ...gs.contract, tricks: 0, vul: gs.vul }).split(' ').slice(0, -1).join(' ')}</b>
-                <span className="text-muted-foreground">（{SEAT_CN[gs.contract.declarer]} 庄）</span>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
         <Card>
           <CardContent className="p-3">
             <div className="mb-2 text-sm font-semibold">记分板（复式分）</div>

@@ -5,9 +5,9 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { LogOut, Play, Users, Wifi } from 'lucide-react'
 import { VUL_LABEL, describeContract, type Seat } from '@/lib/bridge'
-import { cardId, SUIT_LABEL, type CardT } from '@/lib/cards'
+import { cardId, hcp, SUIT_LABEL, type CardT } from '@/lib/cards'
 import { useSocket } from '@/lib/socket'
-import { AuctionCells, BiddingBox, PlayingCard, ResultCard, SEAT_CN, SeatArea } from './game-ui'
+import { AuctionPanel, BiddingBox, PlayingCard, ResultCard, SEAT_CN, SeatArea } from './game-ui'
 import { cn } from '@/lib/utils'
 
 const SEATS: Seat[] = ['N', 'E', 'S', 'W']
@@ -131,15 +131,26 @@ export default function OnlineGameTable({ tableId, onExit }: { tableId: string; 
               onPlay={(card) => send({ t: 'play', card })}
               isUser={seat === mySeat}
               isDummy={seat === v.dummySeat && v.phase === 'play'}
+              hcp={seat === mySeat && v.myHand.length > 0 ? hcp(v.myHand) : null}
             />
           )
         })}
 
         <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-          {v.phase === 'bidding' && v.myTurn && mySeat ? (
-            <div className="w-64 max-w-[calc(100vw-4rem)] max-sm:-translate-y-8">
-              <div className="mb-1 text-center text-xs font-medium text-amber-300">轮到你叫牌</div>
-              <BiddingBox auction={v.auction} seat={mySeat} onCall={(call) => send({ t: 'bid', call })} />
+          {v.phase === 'bidding' ? (
+            <div className="flex max-h-[92%] flex-col items-center gap-2 overflow-y-auto max-sm:-translate-y-4">
+              <AuctionPanel
+                auction={v.auction}
+                dealer={v.dealer}
+                system={v.system}
+                waiting={v.myTurn && mySeat ? undefined : `等待 ${v.turn ? SEAT_CN[v.turn] : ''} 叫牌…`}
+              />
+              {v.myTurn && mySeat && (
+                <>
+                  <div className="text-center text-xs font-medium text-amber-300">轮到你叫牌</div>
+                  <BiddingBox auction={v.auction} seat={mySeat} onCall={(call) => send({ t: 'bid', call })} />
+                </>
+              )}
             </div>
           ) : v.phase === 'scored' && v.result ? (
             <ResultCard
@@ -153,21 +164,30 @@ export default function OnlineGameTable({ tableId, onExit }: { tableId: string; 
               onExit={() => { send({ t: 'leave' }); onExit() }}
             />
           ) : (
-            <div className="relative h-36 w-44 sm:h-44 sm:w-56">
-              {v.trick.map((p) => {
-                const pos = posOf(p.seat)
-                const offset = { bottom: 'left-1/2 top-[58%] -translate-x-1/2', top: 'left-1/2 top-[6%] -translate-x-1/2', left: 'left-[8%] top-1/2 -translate-y-1/2', right: 'right-[8%] top-1/2 -translate-y-1/2' }[pos]
-                return (
-                  <div key={cardId(p.card)} className={cn('absolute', offset)}>
-                    <PlayingCard card={p.card} />
-                  </div>
-                )
-              })}
-              {v.trick.length === 0 && (
-                <div className="flex h-full items-center justify-center text-center text-xs text-emerald-200/60">
-                  {v.phase === 'bidding' ? '叫牌进行中…' : v.myTurn ? '轮到你出牌' : '对局进行中…'}
+            <div className="flex flex-col items-center gap-2">
+              {v.contract && (
+                <div className="rounded-full bg-emerald-950/80 px-3 py-1 text-xs whitespace-nowrap text-emerald-100 shadow">
+                  定约 <b className={cn((v.contract.strain === 'H' || v.contract.strain === 'D') && 'text-rose-300')}>
+                    {describeContract({ ...v.contract, tricks: 0, vul: v.vul }).split(' ').slice(0, -1).join(' ')}
+                  </b> · {SEAT_CN[v.contract.declarer]} 庄
                 </div>
               )}
+              <div className="relative h-36 w-44 sm:h-44 sm:w-56">
+                {v.trick.map((p) => {
+                  const pos = posOf(p.seat)
+                  const offset = { bottom: 'left-1/2 top-[58%] -translate-x-1/2', top: 'left-1/2 top-[6%] -translate-x-1/2', left: 'left-[8%] top-1/2 -translate-y-1/2', right: 'right-[8%] top-1/2 -translate-y-1/2' }[pos]
+                  return (
+                    <div key={cardId(p.card)} className={cn('absolute', offset)}>
+                      <PlayingCard card={p.card} />
+                    </div>
+                  )
+                })}
+                {v.trick.length === 0 && (
+                  <div className="flex h-full items-center justify-center text-center text-xs text-emerald-200/60">
+                    {v.myTurn ? '轮到你出牌' : '对局进行中…'}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -187,31 +207,6 @@ export default function OnlineGameTable({ tableId, onExit }: { tableId: string; 
       </div>
 
       <div className="space-y-3">
-        <Card>
-          <CardContent className="p-3">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-sm font-semibold">叫牌过程</span>
-              <Badge variant="outline" className="text-xs">{v.system === 'precision' ? '精确制' : '自然制'}</Badge>
-            </div>
-            <div className="grid grid-cols-4 gap-1 text-center text-xs">
-              {SEATS.map((s) => (
-                <div key={s} className={cn('rounded py-0.5 font-medium', s === v.dealer ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/50 dark:text-amber-200' : 'bg-muted')}>
-                  {SEAT_CN[s]}
-                </div>
-              ))}
-              <AuctionCells auction={v.auction} dealer={v.dealer} system={v.system} />
-            </div>
-            {v.contract && (
-              <div className="mt-2 rounded-lg bg-emerald-50 p-2 text-center text-sm dark:bg-emerald-900/40">
-                定约：<b className={cn((v.contract.strain === 'H' || v.contract.strain === 'D') && 'text-rose-600')}>
-                  {describeContract({ ...v.contract, tricks: 0, vul: v.vul }).split(' ').slice(0, -1).join(' ')}
-                </b>
-                <span className="text-muted-foreground">（{SEAT_CN[v.contract.declarer]} 庄）</span>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
         <Card>
           <CardContent className="p-3">
             <div className="mb-2 text-sm font-semibold">记分板（复式分）</div>

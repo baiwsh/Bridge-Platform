@@ -1,9 +1,10 @@
 // 牌桌共享 UI 组件：本地单机（GameTable）与联机（OnlineGameTable）复用
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Bot, User, RotateCcw, AlertCircle } from 'lucide-react'
-import { STRAIN_LABEL, type Seat, type Strain } from '@/lib/bridge'
+import { STRAIN_LABEL, describeContract, type Seat, type Strain, type Vul } from '@/lib/bridge'
 import { cardId, rankLabel, SUIT_LABEL, type CardT } from '@/lib/cards'
-import { callRules, isArtificial, STRAIN_ORDER, type AuctionEntry, type Call } from '@/lib/game'
+import { callRules, isArtificial, STRAIN_ORDER, type AuctionEntry, type Call, type FinalContract } from '@/lib/game'
 import type { BiddingSystem } from '@/lib/data'
 import type { ScoreRowMsg } from '@/lib/protocol'
 import { cn } from '@/lib/utils'
@@ -54,8 +55,14 @@ export function PlayingCard({
         playable ? 'cursor-pointer ring-2 ring-amber-400 hover:-translate-y-2' : onClick ? '' : 'cursor-default'
       )}
     >
-      <span className="absolute left-0.5 top-0.5 leading-none">{rankLabel(card.rank)}</span>
-      <span className="absolute bottom-0.5 right-0.5 leading-none">{SUIT_LABEL[card.suit]}</span>
+      {/* 角标纵向堆叠：即使牌被遮挡，左侧窄条也能同时读出点数与花色 */}
+      <span className="absolute left-0.5 top-0.5 flex flex-col items-center leading-[1.05]">
+        <span>{rankLabel(card.rank)}</span>
+        <span>{SUIT_LABEL[card.suit]}</span>
+      </span>
+      {!small && (
+        <span className="absolute bottom-0.5 right-0.5 rotate-180 leading-none opacity-60">{SUIT_LABEL[card.suit]}</span>
+      )}
     </button>
   )
 }
@@ -76,7 +83,7 @@ export function BiddingBox({ auction, seat, onCall }: { auction: AuctionEntry[];
               disabled={rank(l, s) < rules.minBidRank}
               onClick={() => onCall({ type: 'bid', level: l, strain: s })}
               className={cn(
-                'rounded px-1 py-2.5 text-sm font-bold transition-colors sm:py-1.5',
+                'rounded px-1 py-2 text-sm font-bold transition-colors sm:py-1.5',
                 rank(l, s) < rules.minBidRank
                   ? 'cursor-not-allowed text-slate-300 dark:text-slate-700'
                   : s === 'H' || s === 'D'
@@ -153,6 +160,56 @@ export function AuctionCells({
 }
 
 // ---------------------------------------------------------------------------
+// 叫牌面板（牌桌中央显示）
+
+export function AuctionPanel({
+  auction,
+  dealer,
+  system,
+  contract,
+  vul,
+  waiting,
+}: {
+  auction: AuctionEntry[]
+  dealer: Seat
+  system: BiddingSystem
+  contract?: FinalContract | null
+  vul?: Vul
+  waiting?: string
+}) {
+  return (
+    <div className="w-56 max-w-[calc(100vw-4rem)] rounded-xl border bg-white/95 p-2.5 shadow-xl sm:w-64 dark:bg-slate-900">
+      <div className="mb-1.5 flex items-center justify-between">
+        <span className="text-xs font-semibold">叫牌过程</span>
+        <Badge variant="outline" className="text-[10px]">{system === 'precision' ? '精确制' : '自然制'}</Badge>
+      </div>
+      <div className="grid grid-cols-4 gap-1 text-center text-xs">
+        {(['N', 'E', 'S', 'W'] as Seat[]).map((s) => (
+          <div key={s} className={cn('rounded py-0.5 font-medium', s === dealer ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/50 dark:text-amber-200' : 'bg-muted')}>
+            {SEAT_CN[s]}
+          </div>
+        ))}
+        <AuctionCells auction={auction} dealer={dealer} system={system} />
+      </div>
+      {auction.length === 0 && !contract && (
+        <div className="py-1 text-center text-[11px] text-muted-foreground">尚无叫品</div>
+      )}
+      {contract && vul !== undefined && (
+        <div className="mt-1.5 rounded-lg bg-emerald-50 p-1.5 text-center text-xs dark:bg-emerald-900/40">
+          定约：<b className={cn((contract.strain === 'H' || contract.strain === 'D') && 'text-rose-600')}>
+            {describeContract({ ...contract, tricks: 0, vul }).split(' ').slice(0, -1).join(' ')}
+          </b>
+          <span className="text-muted-foreground">（{SEAT_CN[contract.declarer]} 庄）</span>
+        </div>
+      )}
+      {!contract && waiting && (
+        <div className="mt-1.5 text-center text-[11px] text-muted-foreground">{waiting}</div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // 座位区域
 
 export function SeatArea({
@@ -168,6 +225,7 @@ export function SeatArea({
   onPlay,
   isUser,
   isDummy,
+  hcp,
 }: {
   seat: Seat
   pos: 'bottom' | 'left' | 'top' | 'right'
@@ -181,17 +239,26 @@ export function SeatArea({
   onPlay: (c: CardT) => void
   isUser: boolean
   isDummy: boolean
+  hcp?: number | null // 自己手牌的大牌点
 }) {
   const nameTag = (
     <div
       className={cn(
-        'flex max-w-[8.5rem] items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium shadow sm:max-w-none sm:px-2.5 sm:text-xs',
+        'flex max-w-[10rem] items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium shadow sm:max-w-none sm:px-2.5 sm:text-xs',
         active ? 'bg-amber-400 text-emerald-950' : 'bg-emerald-950/70 text-emerald-100'
       )}
     >
       {player.bot ? <Bot className="h-3 w-3 shrink-0" /> : <User className="h-3 w-3 shrink-0" />}
       <span className="truncate">{SEAT_CN[seat]} · {player.name || '空位'}</span>
       {isDummy && <span className="shrink-0 text-[10px] opacity-70">（明手）</span>}
+      {hcp != null && (
+        <span className={cn(
+          'shrink-0 rounded-full px-1.5 font-bold tabular-nums',
+          active ? 'bg-emerald-950/80 text-amber-300' : 'bg-amber-400 text-emerald-950'
+        )}>
+          {hcp} 点
+        </span>
+      )}
     </div>
   )
 
@@ -207,7 +274,8 @@ export function SeatArea({
     <div className={cn('absolute flex gap-1.5', posCls)}>
       {pos !== 'bottom' && nameTag}
       {faceUp && cards ? (
-        <div className={cn('flex', horizontal ? '-space-x-4 sm:-space-x-2.5' : 'max-h-40 -space-y-6 flex-col sm:max-h-56 sm:-space-y-7')}>
+        // 明牌（自己 / 明手）：缩小遮挡幅度，配合纵向角标保证每张牌可读
+        <div className={cn('flex', horizontal ? '-space-x-3 sm:-space-x-1.5' : '-space-y-4 flex-col sm:-space-y-5')}>
           {cards.map((c) => (
             <PlayingCard
               key={cardId(c)}
