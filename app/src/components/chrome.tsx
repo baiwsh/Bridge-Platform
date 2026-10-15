@@ -162,7 +162,7 @@ export function Layout() {
         <Outlet />
       </main>
       <footer className="border-t bg-emerald-950 py-6 text-center text-xs text-emerald-300/60">
-        桥牌汇 BridgeHub · 在线桥牌活动平台 · 支持精确制 / 自然制 · 双人赛 MP 计分
+        桥牌汇 BridgeHub <span className="text-amber-300/80">V{__APP_VERSION__}</span> · 在线桥牌活动平台 · 支持精确制 / 自然制 · 双人赛 MP 计分
       </footer>
     </div>
   )
