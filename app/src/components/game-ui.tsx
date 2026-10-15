@@ -232,6 +232,30 @@ export function AuctionPanel({
 // ---------------------------------------------------------------------------
 // 座位区域
 
+/** 单个叫品在座位前展示的样式数据 */
+export interface CallChip {
+  text: string
+  red: boolean
+  artificial: boolean
+}
+
+/** 提取某个座位的全部叫品，转为牌前小卡条数据 */
+export function seatCallChips(auction: AuctionEntry[], seat: Seat, system: BiddingSystem): CallChip[] {
+  return auction
+    .filter((a) => a.seat === seat)
+    .map((a) => {
+      const c = a.call
+      if (c.type === 'pass') return { text: 'Pass', red: false, artificial: false }
+      if (c.type === 'X') return { text: 'X', red: true, artificial: false }
+      if (c.type === 'XX') return { text: 'XX', red: true, artificial: false }
+      return {
+        text: `${c.level}${STRAIN_LABEL[c.strain]}`,
+        red: c.strain === 'H' || c.strain === 'D',
+        artificial: isArtificial(c, system, true),
+      }
+    })
+}
+
 export function SeatArea({
   seat,
   pos,
@@ -247,6 +271,7 @@ export function SeatArea({
   isDummy,
   hcp,
   onTakeover,
+  calls,
 }: {
   seat: Seat
   pos: 'bottom' | 'left' | 'top' | 'right'
@@ -262,6 +287,7 @@ export function SeatArea({
   isDummy: boolean
   hcp?: number | null // 自己手牌的大牌点
   onTakeover?: () => void // 旁观者接管该 AI 座位
+  calls?: CallChip[] // 该座位已叫的叫品，展示在自己牌前（靠桌心一侧）
 }) {
   const nameTag = (
     <div
@@ -301,9 +327,33 @@ export function SeatArea({
     right: 'right-1 top-1/2 -translate-y-1/2 flex-col items-end sm:right-2 sm:items-center',
   }[pos]
 
+  // 叫牌卡条：摆在手牌靠桌心一侧，像线下牌桌把叫牌卡放在自己面前
+  const callStrip = calls && calls.length > 0 && (
+    <div
+      className={cn(
+        'flex flex-wrap gap-0.5 rounded-md bg-emerald-950/40 p-0.5',
+        horizontal ? 'max-w-[12rem] justify-center sm:max-w-[16rem]' : 'max-w-[5.5rem] sm:max-w-[7rem]'
+      )}
+    >
+      {calls.map((c, i) => (
+        <span
+          key={i}
+          className={cn(
+            'rounded bg-white/90 px-1 py-px text-[9px] font-semibold leading-tight shadow sm:text-[10px]',
+            c.red ? 'text-rose-600' : 'text-slate-700'
+          )}
+        >
+          {c.text}
+          {c.artificial && <span className="ml-px text-amber-500" title="人为约定叫">•</span>}
+        </span>
+      ))}
+    </div>
+  )
+
   return (
     <div className={cn('absolute flex gap-1.5', posCls)}>
       {pos !== 'bottom' && nameTag}
+      {pos === 'bottom' && callStrip}
       {faceUp && cards ? (
         // 明牌（自己 / 明手）：缩小遮挡幅度，配合纵向角标保证每张牌可读
         <div className={cn('flex', horizontal ? '-space-x-3 sm:-space-x-1.5' : '-space-y-4 flex-col sm:-space-y-5')}>
@@ -326,6 +376,7 @@ export function SeatArea({
           <span className="z-10 ml-1 rounded-full bg-emerald-950/80 px-1.5 py-0.5 text-[10px] text-emerald-100">{cardCount}</span>
         </div>
       )}
+      {pos !== 'bottom' && callStrip}
       {pos === 'bottom' && nameTag}
     </div>
   )

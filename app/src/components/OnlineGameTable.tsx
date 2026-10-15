@@ -7,7 +7,7 @@ import { LogOut, Play, Users, Wifi, Eye } from 'lucide-react'
 import { VUL_LABEL, describeContract, type Seat } from '@/lib/bridge'
 import { cardId, hcp, SUIT_LABEL, type CardT } from '@/lib/cards'
 import { useSocket } from '@/lib/socket'
-import { AuctionPanel, BiddingBox, BiddingOverlay, PlayingCard, ResultCard, SEAT_CN, SeatArea } from './game-ui'
+import { AuctionPanel, BiddingBox, BiddingOverlay, PlayingCard, ResultCard, SEAT_CN, SeatArea, seatCallChips } from './game-ui'
 import { cn } from '@/lib/utils'
 
 const SEATS: Seat[] = ['N', 'E', 'S', 'W']
@@ -148,6 +148,7 @@ export default function OnlineGameTable({ tableId, onExit }: { tableId: string; 
                   ? () => send({ t: 'takeover', tableId, seat })
                   : undefined
               }
+              calls={seatCallChips(v.auction, seat, v.system)}
             />
           )
         })}

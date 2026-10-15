@@ -31,7 +31,7 @@ import {
 } from '@/lib/game'
 import type { BiddingSystem } from '@/lib/data'
 import type { ScoreRowMsg } from '@/lib/protocol'
-import { AuctionPanel, BiddingBox, BiddingOverlay, PlayingCard as PlayingCardView, ResultCard, SEAT_CN, SeatArea, type SeatPlayer } from './game-ui'
+import { AuctionPanel, BiddingBox, BiddingOverlay, PlayingCard as PlayingCardView, ResultCard, SEAT_CN, SeatArea, seatCallChips, type SeatPlayer } from './game-ui'
 import { cn } from '@/lib/utils'
 
 export type PlayerInfo = SeatPlayer
@@ -237,6 +237,7 @@ export default function GameTable({
             isUser={seat === userSeat}
             isDummy={seat === dummySeat && gs.phase === 'play'}
             hcp={seat === userSeat && gs.hands[seat].length > 0 ? hcp(gs.hands[seat]) : null}
+            calls={seatCallChips(gs.auction, seat, system)}
           />
         ))}
 
