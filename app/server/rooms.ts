@@ -138,6 +138,17 @@ export class Room {
     return empty
   }
 
+  /** 旁观者接管 AI 座位：仅限纯 AI（真人托管中的座位不可接管） */
+  takeover(user: PublicUser, seat: Seat): string | null {
+    const h = this.seats[seat]
+    if (!h || h.kind !== 'bot') return '该座位不是 AI 牌手'
+    if (this.seatOf(user.id) !== null) return '你已在本桌座位上'
+    this.seats[seat] = { kind: 'human', userId: user.id, name: user.nickname, color: user.color, online: true }
+    // 清除该座位待执行的 AI 定时器（schedule 开头会 clearTimeout 并重新评估）
+    this.schedule()
+    return null
+  }
+
   /** 指定座位入座（每日赛真人固定坐南，保证其成绩记为南北分） */
   joinAt(user: PublicUser, seat: Seat): Seat | null {
     const existing = this.seatOf(user.id)
@@ -449,7 +460,7 @@ export class Room {
     for (const s of SEATS) {
       const h = this.seats[s]
       players[s] = h
-        ? { name: h.name + (h.managed ? '·托管' : ''), bot: h.kind === 'bot' || !!h.managed, color: h.color, online: h.online }
+        ? { name: h.name + (h.managed ? '·托管' : ''), bot: h.kind === 'bot' || !!h.managed, color: h.color, online: h.online, managed: !!h.managed }
         : { name: '', bot: false }
     }
 

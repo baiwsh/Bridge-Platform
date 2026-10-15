@@ -9,7 +9,7 @@ import { registerUser, loginUser, createSession, userByToken, publicUser } from 
 import { Room, TableManager } from './rooms'
 import { dailyDeal, dailyState, hasPlayed, recordDailyBoard } from './daily'
 import { todayEvent } from '../src/lib/data'
-import type { ClientMsg, ServerMsg } from '../src/lib/protocol'
+import type { ClientMsg, ServerMsg, Seat } from '../src/lib/protocol'
 
 const PORT = parseInt(process.env.PORT ?? '8100')
 const __dir = dirname(fileURLToPath(import.meta.url))
@@ -157,6 +157,38 @@ wss.on('connection', (ws, req) => {
           break
         }
         if (target.seatOf(user.id) === null && target.join(pub) === null) err = '座位已满'
+        break
+      }
+      case 'takeover': {
+        // 旁观者接管 AI 座位（仅限纯 AI，真人托管座位不可接管）
+        const target = manager.rooms.get(String(msg.tableId))
+        if (!target) {
+          err = '牌桌不存在'
+          break
+        }
+        if (!['N', 'E', 'S', 'W'].includes(String(msg.seat))) {
+          err = '座位无效'
+          break
+        }
+        if (target.seatOf(user.id) !== null) {
+          err = '你已在本桌座位上'
+          break
+        }
+        // 若在其他桌，先离开（隐藏房回收，普通房转托管）
+        const cur = roomOf(user.id)
+        if (cur) {
+          if (cur.hidden) {
+            cur.destroy()
+            manager.rooms.delete(cur.id)
+          } else {
+            cur.leave(user.id)
+          }
+        }
+        err = target.takeover(pub, msg.seat as Seat)
+        if (!err) {
+          watchers.delete(user.id)
+          send(ws, { t: 'view', view: target.viewFor(user.id) })
+        }
         break
       }
       case 'leave': {

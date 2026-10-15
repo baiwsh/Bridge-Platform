@@ -71,8 +71,18 @@ export default function OnlineGameTable({ tableId, onExit }: { tableId: string; 
                   <div className="mt-1 truncate">{p.name || '空位'}</div>
                   {p.name && (
                     <div className="mt-0.5 text-xs text-muted-foreground">
-                      {p.bot ? 'AI' : p.online === false ? '离线' : '真人'}
+                      {p.bot ? (p.managed ? 'AI 托管' : 'AI') : p.online === false ? '离线' : '真人'}
                     </div>
+                  )}
+                  {p.bot && !p.managed && mySeat === null && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mt-1.5 h-6 px-2 text-[11px] text-amber-700 hover:bg-amber-50"
+                      onClick={() => send({ t: 'takeover', tableId, seat })}
+                    >
+                      接管
+                    </Button>
                   )}
                 </div>
               )
@@ -133,6 +143,11 @@ export default function OnlineGameTable({ tableId, onExit }: { tableId: string; 
               isUser={seat === mySeat}
               isDummy={seat === v.dummySeat && v.phase === 'play'}
               hcp={seat === mySeat && v.myHand.length > 0 ? hcp(v.myHand) : null}
+              onTakeover={
+                !mySeat && v.players[seat].bot && !v.players[seat].managed
+                  ? () => send({ t: 'takeover', tableId, seat })
+                  : undefined
+              }
             />
           )
         })}

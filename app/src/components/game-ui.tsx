@@ -246,6 +246,7 @@ export function SeatArea({
   isUser,
   isDummy,
   hcp,
+  onTakeover,
 }: {
   seat: Seat
   pos: 'bottom' | 'left' | 'top' | 'right'
@@ -260,6 +261,7 @@ export function SeatArea({
   isUser: boolean
   isDummy: boolean
   hcp?: number | null // 自己手牌的大牌点
+  onTakeover?: () => void // 旁观者接管该 AI 座位
 }) {
   const nameTag = (
     <div
@@ -278,6 +280,15 @@ export function SeatArea({
         )}>
           {hcp} 点
         </span>
+      )}
+      {onTakeover && (
+        <button
+          type="button"
+          onClick={onTakeover}
+          className="shrink-0 rounded-full bg-amber-500 px-1.5 py-px text-[10px] font-bold text-emerald-950 shadow hover:bg-amber-400"
+        >
+          接管
+        </button>
       )}
     </div>
   )

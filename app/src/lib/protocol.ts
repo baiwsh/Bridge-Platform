@@ -11,6 +11,8 @@ export interface SeatPlayerInfo {
   bot: boolean
   color?: string
   online?: boolean
+  /** 真人断线托管中（bot 为 true 但座位属于真人，不可被接管） */
+  managed?: boolean
 }
 
 export interface TableSummary {
@@ -118,6 +120,7 @@ export type ClientMsg =
   | { t: 'unwatch' }
   | { t: 'create'; name: string; system: BiddingSystem; scoring: ScoringMode; boards: number; kind: TableKind }
   | { t: 'join'; tableId: string }
+  | { t: 'takeover'; tableId: string; seat: Seat }
   | { t: 'leave' }
   | { t: 'start' }
   | { t: 'bid'; call: Call }
