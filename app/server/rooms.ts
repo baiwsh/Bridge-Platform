@@ -42,6 +42,8 @@ interface SeatHolder {
   name: string
   color?: string
   online: boolean
+  /** 断线 AI 托管中：保留 userId 与座位归属，重连后恢复手动 */
+  managed?: boolean
 }
 
 interface RoomGameState {
@@ -127,6 +129,7 @@ export class Room {
     const existing = this.seatOf(user.id)
     if (existing) {
       this.seats[existing]!.online = true
+      this.seats[existing]!.managed = false // 回到座位：解除托管
       return existing
     }
     const empty = SEATS.find((s) => this.seats[s] === null)
@@ -140,6 +143,7 @@ export class Room {
     const existing = this.seatOf(user.id)
     if (existing) {
       this.seats[existing]!.online = true
+      this.seats[existing]!.managed = false
       return existing
     }
     const h = this.seats[seat]
@@ -152,7 +156,7 @@ export class Room {
     const seat = this.seatOf(userId)
     if (!seat) return
     if (this.started) {
-      this.toBot(seat) // 对局中离开 → AI 托管
+      this.toBot(seat) // 对局中主动离开 → 放弃座位，AI 托管到底
     } else {
       this.seats[seat] = null
     }
@@ -162,13 +166,29 @@ export class Room {
     const seat = this.seatOf(userId)
     if (!seat) return
     this.seats[seat]!.online = false
-    // 隐藏房（每日赛）断线不托管：要么回来继续，要么整桌回收重开
-    if (this.started && !this.hidden) this.toBot(seat)
+    // 断线（关页面/掉线）：普通房保留席位并 AI 托管，重连后恢复手动；
+    // 隐藏房（每日赛）不托管：要么回来继续，要么整桌回收重开
+    if (this.started && !this.hidden) this.seats[seat]!.managed = true
   }
 
   reconnect(userId: string) {
     const seat = this.seatOf(userId)
-    if (seat) this.seats[seat]!.online = true
+    if (seat) {
+      this.seats[seat]!.online = true
+      this.seats[seat]!.managed = false
+    }
+  }
+
+  /** 真人产生任何主动操作 → 视为回到牌桌，解除托管 */
+  private resume(userId: string) {
+    const seat = this.seatOf(userId)
+    if (seat && this.seats[seat]) this.seats[seat]!.managed = false
+  }
+
+  /** 该座位当前由 AI 驱动（纯 AI 或托管中的真人） */
+  private botDriven(seat: Seat): boolean {
+    const h = this.seats[seat]
+    return !!h && (h.kind === 'bot' || !!h.managed)
   }
 
   private toBot(seat: Seat) {
@@ -256,6 +276,7 @@ export class Room {
     if (!gs || gs.phase !== 'bidding') return '当前不能叫牌'
     const seat = this.seatOf(userId)
     if (seat === null || seat !== gs.turn) return '还没轮到你'
+    this.resume(userId)
     // 合法性
     if (call.type === 'bid') {
       const rules = callRules(gs.auction, seat)
@@ -298,6 +319,7 @@ export class Room {
     const turn = gs.turn
     const mySeat = this.seatOf(userId)
     if (mySeat === null) return '你不在座位上'
+    this.resume(userId)
     const dummy = partnerOf(gs.contract!.declarer)
     // 只能打自己的牌；庄家可代明手
     const controls = mySeat === turn || (turn === dummy && mySeat === gs.contract!.declarer)
@@ -353,6 +375,7 @@ export class Room {
   next(userId: string): string | null {
     if (!this.gs || this.gs.phase !== 'scored') return '当前不能进入下一副'
     if (this.seatOf(userId) === null) return '你不在座位上'
+    this.resume(userId)
     if (this.boardNo >= this.boards) return '本场已结束'
     this.boardNo += 1
     this.newBoard(this.boardNo)
@@ -363,6 +386,7 @@ export class Room {
 
   restart(userId: string): string | null {
     if (this.seatOf(userId) === null) return '你不在座位上'
+    this.resume(userId)
     if (this.kind === 'event') return '比赛牌局不可重开'
     this.started = true
     this.boardNo = this.fixedBoardNo ?? 1
@@ -384,8 +408,7 @@ export class Room {
     if (!this.started || !gs) return
 
     if (gs.phase === 'bidding') {
-      const holder = this.seats[gs.turn]
-      if (holder?.kind !== 'bot') return
+      if (!this.botDriven(gs.turn)) return
       this.timer = setTimeout(() => {
         const call = chooseBid(gs.hands[gs.turn], gs.auction, gs.turn, this.system)
         this.applyBid(call)
@@ -407,7 +430,7 @@ export class Room {
       const turn = gs.turn
       const dummy = partnerOf(gs.contract!.declarer)
       const decider = turn === dummy ? gs.contract!.declarer : turn
-      if (this.seats[decider]?.kind !== 'bot') return
+      if (!this.botDriven(decider)) return
       this.timer = setTimeout(() => {
         const card = choosePlay(gs.hands[turn], gs.trick, gs.trump, turn)
         this.applyPlay(turn, card)
@@ -425,7 +448,9 @@ export class Room {
     const players = {} as Record<Seat, SeatPlayerInfo>
     for (const s of SEATS) {
       const h = this.seats[s]
-      players[s] = h ? { name: h.name, bot: h.kind === 'bot', color: h.color, online: h.online } : { name: '', bot: false }
+      players[s] = h
+        ? { name: h.name + (h.managed ? '·托管' : ''), bot: h.kind === 'bot' || !!h.managed, color: h.color, online: h.online }
+        : { name: '', bot: false }
     }
 
     const base: ViewState = {

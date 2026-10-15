@@ -61,6 +61,7 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       ws.onclose = () => {
         wsRef.current = null
         setConnected(false)
+        setView(null) // 清除旧视图，重连后由服务端推送最新状态
         if (closed) return
         retry = Math.min(retry + 1, 5)
         timer = setTimeout(connect, 800 * retry)

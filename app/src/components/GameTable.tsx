@@ -31,7 +31,7 @@ import {
 } from '@/lib/game'
 import type { BiddingSystem } from '@/lib/data'
 import type { ScoreRowMsg } from '@/lib/protocol'
-import { AuctionPanel, BiddingBox, PlayingCard as PlayingCardView, ResultCard, SEAT_CN, SeatArea, type SeatPlayer } from './game-ui'
+import { AuctionPanel, BiddingBox, BiddingOverlay, PlayingCard as PlayingCardView, ResultCard, SEAT_CN, SeatArea, type SeatPlayer } from './game-ui'
 import { cn } from '@/lib/utils'
 
 export type PlayerInfo = SeatPlayer
@@ -240,23 +240,26 @@ export default function GameTable({
           />
         ))}
 
+        {/* 叫牌阶段：面板与叫牌盘锚定在自己手牌上方，全程不遮挡手牌 */}
+        {gs.phase === 'bidding' && (
+          <BiddingOverlay>
+            <AuctionPanel
+              auction={gs.auction}
+              dealer={gs.dealer}
+              system={system}
+              waiting={userBiddingTurn ? undefined : `等待 ${SEAT_CN[gs.turn]} 叫牌…`}
+            />
+            {userBiddingTurn && (
+              <>
+                <div className="text-center text-xs font-medium text-amber-300">轮到你叫牌</div>
+                <BiddingBox auction={gs.auction} seat={userSeat} onCall={(c) => setGs((prev) => applyBid(prev, c))} />
+              </>
+            )}
+          </BiddingOverlay>
+        )}
+
         <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-          {gs.phase === 'bidding' ? (
-            <div className="flex max-h-[92%] flex-col items-center gap-2 overflow-y-auto max-sm:-translate-y-4">
-              <AuctionPanel
-                auction={gs.auction}
-                dealer={gs.dealer}
-                system={system}
-                waiting={userBiddingTurn ? undefined : `等待 ${SEAT_CN[gs.turn]} 叫牌…`}
-              />
-              {userBiddingTurn && (
-                <>
-                  <div className="text-center text-xs font-medium text-amber-300">轮到你叫牌</div>
-                  <BiddingBox auction={gs.auction} seat={userSeat} onCall={(c) => setGs((prev) => applyBid(prev, c))} />
-                </>
-              )}
-            </div>
-          ) : gs.phase === 'scored' && gs.result ? (
+          {gs.phase === 'bidding' ? null : gs.phase === 'scored' && gs.result ? (
             <ResultCard
               row={gs.result}
               boardNo={boardNo}

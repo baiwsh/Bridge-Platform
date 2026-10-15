@@ -1,5 +1,5 @@
-import { Link, NavLink, Outlet, useNavigate } from 'react-router'
-import { useState } from 'react'
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router'
+import { useEffect, useRef, useState } from 'react'
 import { Spade, Heart, Club, Diamond, LogOut, User as UserIcon, Menu, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -13,7 +13,38 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { AuthDialog } from './AuthDialog'
 import { useStore } from '@/lib/store'
+import { useMaybeSocket } from '@/lib/socket'
 import { cn } from '@/lib/utils'
+
+/**
+ * 重新登录/刷新后：若服务端视图显示我仍坐在某张牌桌（断线托管中的座位），
+ * 在本次连接建立后自动跳回该牌桌一次。主动点击「离开牌桌」不会触发（座位已释放）。
+ */
+function AutoReturnToTable() {
+  const socket = useMaybeSocket()
+  const navigate = useNavigate()
+  const { pathname } = useLocation()
+  const armedRef = useRef(false)
+  const wasConnected = useRef(false)
+  const connected = !!socket?.connected
+  const view = socket?.view ?? null
+
+  useEffect(() => {
+    if (connected && !wasConnected.current) armedRef.current = true
+    wasConnected.current = connected
+  }, [connected])
+
+  useEffect(() => {
+    if (!armedRef.current || !view || view.mySeat == null) return
+    armedRef.current = false
+    // 每日赛房间留在赛事页即可（该页内嵌牌桌）
+    if (view.tableId.startsWith('daily-') && pathname === '/event/daily') return
+    const target = `/table/${view.tableId}`
+    if (pathname !== target) navigate(target)
+  }, [view, pathname, navigate])
+
+  return null
+}
 
 export function SuitGlyph({ s, className }: { s: 'S' | 'H' | 'D' | 'C'; className?: string }) {
   const map = { S: Spade, H: Heart, D: Diamond, C: Club } as const
@@ -126,6 +157,7 @@ export function Layout() {
   return (
     <div className="flex min-h-screen flex-col bg-emerald-50/60 dark:bg-emerald-950">
       <NavBar />
+      <AutoReturnToTable />
       <main className="mx-auto w-full max-w-6xl flex-1 px-3 py-4 sm:px-4 sm:py-6">
         <Outlet />
       </main>

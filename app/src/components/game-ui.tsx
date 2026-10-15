@@ -1,4 +1,5 @@
 // 牌桌共享 UI 组件：本地单机（GameTable）与联机（OnlineGameTable）复用
+import { useEffect, useRef, type ReactNode } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Bot, User, RotateCcw, AlertCircle } from 'lucide-react'
@@ -68,6 +69,25 @@ export function PlayingCard({
 }
 
 // ---------------------------------------------------------------------------
+// 叫牌浮层：锚定在玩家手牌上方，不遮挡手牌；内容过高时可滚动且默认滚到底部
+
+export function BiddingOverlay({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  // 内容变化后保持滚到底部（叫牌盘/操作按钮始终完整可见，早期叫品可上滑查看）
+  useEffect(() => {
+    const el = ref.current
+    if (el) el.scrollTop = el.scrollHeight
+  })
+  return (
+    <div className="absolute inset-x-0 bottom-[96px] flex max-h-[calc(100%-120px)] justify-center sm:bottom-[118px] sm:max-h-[calc(100%-140px)]">
+      <div ref={ref} className="flex max-h-full flex-col items-center gap-2 overflow-y-auto px-1 py-1">
+        {children}
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // 叫牌盘
 
 export function BiddingBox({ auction, seat, onCall }: { auction: AuctionEntry[]; seat: Seat; onCall: (c: Call) => void }) {
@@ -83,7 +103,7 @@ export function BiddingBox({ auction, seat, onCall }: { auction: AuctionEntry[];
               disabled={rank(l, s) < rules.minBidRank}
               onClick={() => onCall({ type: 'bid', level: l, strain: s })}
               className={cn(
-                'rounded px-1 py-2 text-sm font-bold transition-colors sm:py-1.5',
+                'rounded px-1 py-1.5 text-sm font-bold transition-colors sm:py-1',
                 rank(l, s) < rules.minBidRank
                   ? 'cursor-not-allowed text-slate-300 dark:text-slate-700'
                   : s === 'H' || s === 'D'
@@ -312,6 +332,7 @@ export function ResultCard({
   onNext,
   onRestart,
   onExit,
+  spectator,
 }: {
   row: ScoreRowMsg
   boardNo: number
@@ -321,6 +342,7 @@ export function ResultCard({
   onNext: () => void
   onRestart: () => void
   onExit: () => void
+  spectator?: boolean
 }) {
   return (
     <div className="w-64 max-w-[calc(100vw-2.5rem)] rounded-xl border bg-white/95 p-4 text-center shadow-xl dark:bg-slate-900">
@@ -333,7 +355,17 @@ export function ResultCard({
       <div className="mt-2 border-t pt-2 text-sm">
         累计：<b className="tabular-nums">NS {nsTotal >= 0 ? '+' : ''}{nsTotal}</b>
       </div>
-      {gameOver ? (
+      {spectator ? (
+        <div className="mt-3 space-y-2">
+          {gameOver && (
+            <div className="rounded-lg bg-amber-50 py-2 text-sm font-bold text-amber-800 dark:bg-amber-950/50 dark:text-amber-200">
+              {nsTotal > 0 ? `全场结束：南北胜（${nsTotal} : ${-nsTotal}）` : nsTotal < 0 ? `全场结束：东西胜（${-nsTotal} : ${nsTotal}）` : '全场结束：平局'}
+            </div>
+          )}
+          <div className="text-xs text-muted-foreground">旁观模式 · 请等待牌手进入下一副</div>
+          <Button size="sm" variant="outline" className="w-full" onClick={onExit}>退出旁观</Button>
+        </div>
+      ) : gameOver ? (
         <div className="mt-3 space-y-2">
           <div className="rounded-lg bg-amber-50 py-2 text-sm font-bold text-amber-800 dark:bg-amber-950/50 dark:text-amber-200">
             {nsTotal > 0 ? `全场结束：南北胜（${nsTotal} : ${-nsTotal}）` : nsTotal < 0 ? `全场结束：东西胜（${-nsTotal} : ${nsTotal}）` : '全场结束：平局'}

@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Users, Bot, Zap, Trophy, PlusCircle, Lock, LogIn, LogOut, Wifi, WifiOff } from 'lucide-react'
+import { Users, Bot, Zap, Trophy, PlusCircle, Lock, LogIn, LogOut, Wifi, WifiOff, Eye, PlayCircle } from 'lucide-react'
 import { useStore } from '@/lib/store'
 import { useMaybeSocket } from '@/lib/socket'
 import { AuthDialog } from '@/components/AuthDialog'
@@ -41,7 +41,7 @@ function SeatRow({ seats }: { seats: (string | null)[] }) {
   )
 }
 
-function TableCard({ t, onAuthNeeded, onJoin, onLeave }: { t: BridgeTable; onAuthNeeded: () => void; onJoin?: (id: string) => void; onLeave?: (id: string) => void }) {
+function TableCard({ t, onAuthNeeded, onJoin, onLeave, onWatch }: { t: BridgeTable; onAuthNeeded: () => void; onJoin?: (id: string) => void; onLeave?: (id: string) => void; onWatch?: (id: string) => void }) {
   const { user, joinTable, leaveTable } = useStore()
   const navigate = useNavigate()
   const seated = user ? t.seats.includes(user.nickname) : false
@@ -97,9 +97,16 @@ function TableCard({ t, onAuthNeeded, onJoin, onLeave }: { t: BridgeTable; onAut
               </Button>
             </>
           ) : (
-            <Button size="sm" variant="outline" className="flex-1" disabled={empty === 0} onClick={join}>
-              <LogIn className="mr-1 h-4 w-4" /> {empty === 0 ? '座位已满' : '入座'}
-            </Button>
+            <>
+              <Button size="sm" variant="outline" className="flex-1" disabled={empty === 0} onClick={join}>
+                <LogIn className="mr-1 h-4 w-4" /> {empty === 0 ? '座位已满' : '入座'}
+              </Button>
+              {onWatch && (
+                <Button size="sm" variant="outline" onClick={() => (user ? onWatch(t.id) : onAuthNeeded())}>
+                  <Eye className="mr-1 h-4 w-4" /> 旁观
+                </Button>
+              )}
+            </>
           )}
         </div>
       </CardContent>
@@ -179,9 +186,32 @@ export default function Lobby() {
     navigate(`/table/${id}`)
   }
   const onlineLeave = (_id: string) => socket!.send({ t: 'leave' })
+  const onlineWatch = (id: string) => navigate(`/table/${id}`)
+
+  // 我仍在座位上的牌桌（断线托管保留席位，重新登录后可一键回去）
+  const activeView = isOnline && socket!.view && socket!.view.mySeat != null ? socket!.view : null
 
   return (
     <div className="space-y-5">
+      {activeView && (
+        <Card className="border-amber-400 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/30">
+          <CardContent className="flex flex-wrap items-center gap-3 p-3">
+            <PlayCircle className="h-5 w-5 shrink-0 text-amber-600" />
+            <div className="min-w-0 flex-1 text-sm">
+              你正在 <b>「{activeView.tableName}」</b>
+              {activeView.phase === 'lobby' ? ' 等待开局' : ' 的对局中'}
+              {activeView.tableId.startsWith('daily-') ? '（每日双人赛）' : ''}
+            </div>
+            <Button
+              size="sm"
+              className="bg-amber-400 text-emerald-950 hover:bg-amber-300"
+              onClick={() => navigate(activeView.tableId.startsWith('daily-') ? '/event/daily' : `/table/${activeView.tableId}`)}
+            >
+              回到牌桌
+            </Button>
+          </CardContent>
+        </Card>
+      )}
       <div className="flex flex-wrap items-center gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-bold">
@@ -298,6 +328,7 @@ export default function Lobby() {
             onAuthNeeded={() => setAuthOpen(true)}
             onJoin={isOnline ? onlineJoin : undefined}
             onLeave={isOnline ? onlineLeave : undefined}
+            onWatch={isOnline ? onlineWatch : undefined}
           />
         ))}
         {filtered.length === 0 && (

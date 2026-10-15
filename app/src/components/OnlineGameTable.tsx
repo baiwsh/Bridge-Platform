@@ -3,11 +3,11 @@ import { useEffect, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
-import { LogOut, Play, Users, Wifi } from 'lucide-react'
+import { LogOut, Play, Users, Wifi, Eye } from 'lucide-react'
 import { VUL_LABEL, describeContract, type Seat } from '@/lib/bridge'
 import { cardId, hcp, SUIT_LABEL, type CardT } from '@/lib/cards'
 import { useSocket } from '@/lib/socket'
-import { AuctionPanel, BiddingBox, PlayingCard, ResultCard, SEAT_CN, SeatArea } from './game-ui'
+import { AuctionPanel, BiddingBox, BiddingOverlay, PlayingCard, ResultCard, SEAT_CN, SeatArea } from './game-ui'
 import { cn } from '@/lib/utils'
 
 const SEATS: Seat[] = ['N', 'E', 'S', 'W']
@@ -108,6 +108,7 @@ export default function OnlineGameTable({ tableId, onExit }: { tableId: string; 
           <Badge className="bg-emerald-950/70 text-emerald-100">{SEAT_CN[v.dealer]} 开叫</Badge>
           {v.passedOut && <Badge className="bg-amber-500 text-emerald-950">上把流局 · 已重发</Badge>}
           <Badge className="bg-emerald-950/70 text-emerald-300"><Wifi className="mr-1 h-3 w-3" />联机</Badge>
+          {!mySeat && <Badge className="bg-sky-600 text-white"><Eye className="mr-1 h-3 w-3" />旁观中</Badge>}
         </div>
         <div className="absolute right-2 top-2 flex max-w-[34%] flex-wrap justify-end gap-1 sm:right-3 sm:top-3 sm:gap-1.5 [&>*]:max-sm:text-[10px]">
           <Badge variant="outline" className="border-emerald-300/40 text-emerald-100">NS {v.tricksNS} 墩</Badge>
@@ -136,23 +137,26 @@ export default function OnlineGameTable({ tableId, onExit }: { tableId: string; 
           )
         })}
 
+        {/* 叫牌阶段：面板与叫牌盘锚定在自己手牌上方，全程不遮挡手牌 */}
+        {v.phase === 'bidding' && (
+          <BiddingOverlay>
+            <AuctionPanel
+              auction={v.auction}
+              dealer={v.dealer}
+              system={v.system}
+              waiting={v.myTurn && mySeat ? undefined : `等待 ${v.turn ? SEAT_CN[v.turn] : ''} 叫牌…`}
+            />
+            {v.myTurn && mySeat && (
+              <>
+                <div className="text-center text-xs font-medium text-amber-300">轮到你叫牌</div>
+                <BiddingBox auction={v.auction} seat={mySeat} onCall={(call) => send({ t: 'bid', call })} />
+              </>
+            )}
+          </BiddingOverlay>
+        )}
+
         <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-          {v.phase === 'bidding' ? (
-            <div className="flex max-h-[92%] flex-col items-center gap-2 overflow-y-auto max-sm:-translate-y-4">
-              <AuctionPanel
-                auction={v.auction}
-                dealer={v.dealer}
-                system={v.system}
-                waiting={v.myTurn && mySeat ? undefined : `等待 ${v.turn ? SEAT_CN[v.turn] : ''} 叫牌…`}
-              />
-              {v.myTurn && mySeat && (
-                <>
-                  <div className="text-center text-xs font-medium text-amber-300">轮到你叫牌</div>
-                  <BiddingBox auction={v.auction} seat={mySeat} onCall={(call) => send({ t: 'bid', call })} />
-                </>
-              )}
-            </div>
-          ) : v.phase === 'scored' && v.result ? (
+          {v.phase === 'bidding' ? null : v.phase === 'scored' && v.result ? (
             <ResultCard
               row={v.result}
               boardNo={v.boardNo}
@@ -161,7 +165,8 @@ export default function OnlineGameTable({ tableId, onExit }: { tableId: string; 
               gameOver={v.gameOver}
               onNext={() => send({ t: 'next' })}
               onRestart={() => send({ t: 'restart' })}
-              onExit={() => { send({ t: 'leave' }); onExit() }}
+              onExit={() => { if (mySeat) send({ t: 'leave' }); else send({ t: 'unwatch' }); onExit() }}
+              spectator={!mySeat}
             />
           ) : (
             <div className="flex flex-col items-center gap-2">
@@ -231,8 +236,8 @@ export default function OnlineGameTable({ tableId, onExit }: { tableId: string; 
           </CardContent>
         </Card>
 
-        <Button variant="outline" className="w-full" onClick={() => { send({ t: 'leave' }); onExit() }}>
-          <LogOut className="mr-1 h-4 w-4" /> 离开牌桌
+        <Button variant="outline" className="w-full" onClick={() => { if (mySeat) send({ t: 'leave' }); else send({ t: 'unwatch' }); onExit() }}>
+          <LogOut className="mr-1 h-4 w-4" /> {mySeat ? '离开牌桌' : '退出旁观'}
         </Button>
       </div>
     </div>

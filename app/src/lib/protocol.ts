@@ -115,6 +115,7 @@ export interface DailyState {
 // ---- 客户端 → 服务端 ----
 export type ClientMsg =
   | { t: 'watch'; tableId: string }
+  | { t: 'unwatch' }
   | { t: 'create'; name: string; system: BiddingSystem; scoring: ScoringMode; boards: number; kind: TableKind }
   | { t: 'join'; tableId: string }
   | { t: 'leave' }
@@ -129,7 +130,7 @@ export type ClientMsg =
 // ---- 服务端 → 客户端 ----
 export type ServerMsg =
   | { t: 'tables'; tables: TableSummary[] }
-  | { t: 'view'; view: ViewState }
+  | { t: 'view'; view: ViewState | null }
   | { t: 'daily'; daily: DailyState }
   | { t: 'error'; message: string }
 

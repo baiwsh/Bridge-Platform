@@ -135,6 +135,11 @@ wss.on('connection', (ws, req) => {
         if (target) send(ws, { t: 'view', view: target.viewFor(user.id) })
         break
       }
+      case 'unwatch': {
+        watchers.delete(user.id)
+        send(ws, { t: 'view', view: null })
+        break
+      }
       case 'create': {
         manager.createTable(pub, {
           name: String(msg.name || `${pub.nickname} 的牌桌`).slice(0, 24),
@@ -163,6 +168,7 @@ wss.on('connection', (ws, req) => {
         } else {
           room?.leave(user.id)
         }
+        send(ws, { t: 'view', view: null })
         break
       }
       case 'daily': {
