@@ -79,11 +79,55 @@ export function BiddingOverlay({ children }: { children: ReactNode }) {
     if (el) el.scrollTop = el.scrollHeight
   })
   return (
-    <div className="absolute inset-x-0 bottom-[96px] flex max-h-[calc(100%-120px)] justify-center sm:bottom-[118px] sm:max-h-[calc(100%-140px)]">
+    <div className="absolute inset-x-0 bottom-[96px] flex max-h-[46%] justify-center sm:bottom-[118px] sm:max-h-[calc(100%-140px)]">
       <div ref={ref} className="flex max-h-full flex-col items-center gap-2 overflow-y-auto px-1 py-1">
         {children}
       </div>
     </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// 叫牌面板区块：桌面端显示完整「叫牌过程」面板；
+// 手机端默认收起为一行摘要条（最近 4 个叫品），点开才展开完整面板——
+// 避免浮层向上盖住顶部同伴的牌
+
+export function AuctionSection({
+  auction,
+  dealer,
+  system,
+  waiting,
+}: {
+  auction: AuctionEntry[]
+  dealer: Seat
+  system: BiddingSystem
+  waiting?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const textOf = (c: Call): string => {
+    if (c.type === 'pass') return 'Pass'
+    if (c.type === 'X') return 'X'
+    if (c.type === 'XX') return 'XX'
+    return `${c.level}${STRAIN_LABEL[c.strain]}`
+  }
+  const recent = auction.slice(-4).map((a) => textOf(a.call)).join(' ')
+  return (
+    <>
+      <div className="max-sm:hidden">
+        <AuctionPanel auction={auction} dealer={dealer} system={system} waiting={waiting} />
+      </div>
+      <div className="flex flex-col items-center gap-1 sm:hidden">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="rounded-full border bg-white/95 px-3 py-1 text-[11px] font-medium text-slate-700 shadow dark:bg-slate-900 dark:text-slate-200"
+        >
+          叫牌过程{recent ? ` · ${recent}` : ''}
+          <span className="ml-1 text-slate-400">{open ? '▲收起' : '▼展开'}</span>
+        </button>
+        {open && <AuctionPanel auction={auction} dealer={dealer} system={system} waiting={waiting} />}
+      </div>
+    </>
   )
 }
 

@@ -31,7 +31,7 @@ import {
 } from '@/lib/game'
 import type { BiddingSystem } from '@/lib/data'
 import type { ScoreRowMsg } from '@/lib/protocol'
-import { AuctionPanel, BiddingBox, BiddingOverlay, PlayingCard as PlayingCardView, ResultCard, SEAT_CN, SeatArea, seatCallChips, type SeatPlayer } from './game-ui'
+import { AuctionSection, BiddingBox, BiddingOverlay, PlayingCard as PlayingCardView, ResultCard, SEAT_CN, SeatArea, seatCallChips, type SeatPlayer } from './game-ui'
 import { cn } from '@/lib/utils'
 
 export type PlayerInfo = SeatPlayer
@@ -244,7 +244,7 @@ export default function GameTable({
         {/* 叫牌阶段：面板与叫牌盘锚定在自己手牌上方，全程不遮挡手牌 */}
         {gs.phase === 'bidding' && (
           <BiddingOverlay>
-            <AuctionPanel
+            <AuctionSection
               auction={gs.auction}
               dealer={gs.dealer}
               system={system}

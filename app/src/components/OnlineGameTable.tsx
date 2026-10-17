@@ -7,7 +7,7 @@ import { LogOut, Play, Users, Wifi, Eye } from 'lucide-react'
 import { VUL_LABEL, describeContract, type Seat } from '@/lib/bridge'
 import { cardId, hcp, SUIT_LABEL, type CardT } from '@/lib/cards'
 import { useSocket } from '@/lib/socket'
-import { AuctionPanel, BiddingBox, BiddingOverlay, PlayingCard, ResultCard, SEAT_CN, SeatArea, seatCallChips } from './game-ui'
+import { AuctionSection, BiddingBox, BiddingOverlay, PlayingCard, ResultCard, SEAT_CN, SeatArea, seatCallChips } from './game-ui'
 import { cn } from '@/lib/utils'
 
 const SEATS: Seat[] = ['N', 'E', 'S', 'W']
@@ -156,7 +156,7 @@ export default function OnlineGameTable({ tableId, onExit }: { tableId: string; 
         {/* 叫牌阶段：面板与叫牌盘锚定在自己手牌上方，全程不遮挡手牌 */}
         {v.phase === 'bidding' && (
           <BiddingOverlay>
-            <AuctionPanel
+            <AuctionSection
               auction={v.auction}
               dealer={v.dealer}
               system={v.system}
