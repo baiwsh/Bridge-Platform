@@ -1,5 +1,5 @@
 // 牌桌共享 UI 组件：本地单机（GameTable）与联机（OnlineGameTable）复用
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Bot, User, RotateCcw, AlertCircle } from 'lucide-react'
@@ -92,35 +92,71 @@ export function BiddingOverlay({ children }: { children: ReactNode }) {
 
 export function BiddingBox({ auction, seat, onCall }: { auction: AuctionEntry[]; seat: Seat; onCall: (c: Call) => void }) {
   const rules = callRules(auction, seat)
+  const [level, setLevel] = useState<number | null>(null)
   const rank = (l: number, s: Strain) => l * 5 + STRAIN_ORDER.indexOf(s)
+  // 叫牌推进后清除已选阶数，避免跨轮残留
+  useEffect(() => setLevel(null), [auction.length])
+
+  const pick = (s: Strain) => {
+    if (level === null) return
+    onCall({ type: 'bid', level, strain: s })
+    setLevel(null)
+  }
+
+  const lvBtn = (l: number) => {
+    const usable = STRAIN_ORDER.some((s) => rank(l, s) >= rules.minBidRank)
+    const selected = level === l
+    return (
+      <button
+        key={l}
+        disabled={!usable}
+        onClick={() => setLevel(selected ? null : l)}
+        className={cn(
+          'h-7 w-7 rounded text-sm font-bold transition-colors sm:h-6 sm:w-6',
+          !usable
+            ? 'cursor-not-allowed text-slate-300 dark:text-slate-700'
+            : selected
+              ? 'bg-amber-400 text-emerald-950'
+              : 'text-slate-800 hover:bg-emerald-50 dark:text-slate-200 dark:hover:bg-emerald-950'
+        )}
+      >
+        {l}
+      </button>
+    )
+  }
+
   return (
-    <div className="rounded-xl border bg-white/95 p-2.5 shadow-xl sm:p-3 dark:bg-slate-900">
-      <div className="grid grid-cols-5 gap-1">
-        {[1, 2, 3, 4, 5, 6, 7].flatMap((l) =>
-          STRAIN_ORDER.map((s) => (
+    <div className="rounded-xl border bg-white/95 px-2.5 py-2 shadow-xl dark:bg-slate-900">
+      {/* 两段式叫牌：先选阶数，再选花色，版面仅为传统 35 格叫牌盘的 1/3 */}
+      <div className="flex items-center justify-center gap-0.5">
+        {[1, 2, 3, 4, 5, 6, 7].map(lvBtn)}
+      </div>
+      <div className="mt-1 flex items-center justify-center gap-0.5">
+        {STRAIN_ORDER.map((s) => {
+          const ok = level !== null && rank(level, s) >= rules.minBidRank
+          return (
             <button
-              key={`${l}${s}`}
-              disabled={rank(l, s) < rules.minBidRank}
-              onClick={() => onCall({ type: 'bid', level: l, strain: s })}
+              key={s}
+              disabled={!ok}
+              onClick={() => pick(s)}
               className={cn(
-                'rounded px-1 py-1.5 text-sm font-bold transition-colors sm:py-1',
-                rank(l, s) < rules.minBidRank
+                'h-7 rounded px-2 text-sm font-bold transition-colors sm:h-6 sm:text-xs',
+                !ok
                   ? 'cursor-not-allowed text-slate-300 dark:text-slate-700'
                   : s === 'H' || s === 'D'
                     ? 'text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950'
                     : 'text-slate-800 hover:bg-emerald-50 dark:text-slate-200 dark:hover:bg-emerald-950'
               )}
             >
-              {l}
-              {STRAIN_LABEL[s]}
+              {s === 'NT' ? 'NT' : STRAIN_LABEL[s]}
             </button>
-          ))
-        )}
+          )
+        })}
       </div>
-      <div className="mt-2 grid grid-cols-3 gap-1">
-        <Button size="sm" variant="outline" onClick={() => onCall({ type: 'pass' })}>Pass</Button>
-        <Button size="sm" variant="outline" disabled={!rules.canX} className="text-rose-600" onClick={() => onCall({ type: 'X' })}>加倍 X</Button>
-        <Button size="sm" variant="outline" disabled={!rules.canXX} className="text-sky-600" onClick={() => onCall({ type: 'XX' })}>再加倍 XX</Button>
+      <div className="mt-1.5 flex items-center justify-center gap-1.5">
+        <Button size="sm" variant="outline" className="h-6 px-2.5 text-xs" onClick={() => onCall({ type: 'pass' })}>Pass</Button>
+        <Button size="sm" variant="outline" className="h-6 px-2.5 text-xs text-rose-600" disabled={!rules.canX} onClick={() => onCall({ type: 'X' })}>加倍</Button>
+        <Button size="sm" variant="outline" className="h-6 px-2.5 text-xs text-sky-600" disabled={!rules.canXX} onClick={() => onCall({ type: 'XX' })}>再加倍</Button>
       </div>
     </div>
   )
