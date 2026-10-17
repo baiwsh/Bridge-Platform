@@ -191,6 +191,11 @@ wss.on('connection', (ws, req) => {
         }
         break
       }
+      case 'proxy': {
+        const room = roomOf(user.id)
+        err = room ? room.setProxy(user.id, !!msg.on) : '你不在任何牌桌'
+        break
+      }
       case 'leave': {
         const room = roomOf(user.id)
         if (room?.hidden) {

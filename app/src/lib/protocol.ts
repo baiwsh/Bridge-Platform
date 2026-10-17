@@ -51,6 +51,12 @@ export interface ViewState {
   myHand: CardT[]
   dummySeat: Seat | null
   dummyHand: CardT[] | null
+  /** 我是明手且庄家是纯 AI：可代打同伴（本副） */
+  canProxy?: boolean
+  /** 我已开启代打：proxySeat=庄家座位，proxyHand=庄家手牌（对我可见） */
+  proxyOn?: boolean
+  proxySeat?: Seat | null
+  proxyHand?: CardT[] | null
   allHands: Record<Seat, CardT[]> | null
   counts: Record<Seat, number>
   auction: AuctionEntry[]
@@ -121,6 +127,7 @@ export type ClientMsg =
   | { t: 'create'; name: string; system: BiddingSystem; scoring: ScoringMode; boards: number; kind: TableKind }
   | { t: 'join'; tableId: string }
   | { t: 'takeover'; tableId: string; seat: Seat }
+  | { t: 'proxy'; on: boolean }
   | { t: 'leave' }
   | { t: 'start' }
   | { t: 'bid'; call: Call }

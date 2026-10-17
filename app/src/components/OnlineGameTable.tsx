@@ -1,13 +1,13 @@
 // 联机牌桌：状态全部来自服务端推送的 ViewState，操作通过 WebSocket 发送
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
-import { LogOut, Play, Users, Wifi, Eye } from 'lucide-react'
+import { LogOut, Play, Users, Wifi, Eye, Hand, RotateCcw } from 'lucide-react'
 import { VUL_LABEL, describeContract, type Seat } from '@/lib/bridge'
 import { cardId, hcp, SUIT_LABEL, type CardT } from '@/lib/cards'
 import { useSocket } from '@/lib/socket'
-import { AuctionSection, BiddingBox, BiddingOverlay, PlayingCard, ResultCard, SEAT_CN, SeatArea, seatCallChips } from './game-ui'
+import { AuctionSection, BiddingBox, BiddingOverlay, CallInfoCard, PlayingCard, ResultCard, SEAT_CN, SeatArea, seatCallChips } from './game-ui'
 import { cn } from '@/lib/utils'
 
 const SEATS: Seat[] = ['N', 'E', 'S', 'W']
@@ -15,6 +15,8 @@ const DIR_CN: Seat[] = ['N', 'E', 'S', 'W']
 
 export default function OnlineGameTable({ tableId, onExit }: { tableId: string; onExit: () => void }) {
   const { view, send, lastError, connected } = useSocket()
+  const [infoIdx, setInfoIdx] = useState<number | null>(null) // 查看叫品含义
+  const [reviewing, setReviewing] = useState(false) // 收起结果卡回顾本副
 
   // 打开牌桌页即订阅该桌视图（未入座也可看到大厅阶段）
   useEffect(() => {
@@ -24,6 +26,12 @@ export default function OnlineGameTable({ tableId, onExit }: { tableId: string; 
   const v = view && view.tableId === tableId ? view : null
 
   const nsTotal = useMemo(() => (v ? v.scores.reduce((s, r) => s + r.nsScore, 0) : 0), [v])
+  const boardNo = v?.boardNo
+  // 进入新一副后自动退出回顾模式并关掉含义弹卡
+  useEffect(() => {
+    setReviewing(false)
+    setInfoIdx(null)
+  }, [boardNo])
 
   if (!v) {
     return (
@@ -46,6 +54,8 @@ export default function OnlineGameTable({ tableId, onExit }: { tableId: string; 
     if (v.phase === 'scored' && v.allHands) return { cards: v.allHands[seat], faceUp: true }
     if (seat === mySeat) return { cards: v.myHand, faceUp: true }
     if ((v.phase === 'play' || v.phase === 'scored') && seat === v.dummySeat) return { cards: v.dummyHand, faceUp: true }
+    // 代打 AI 庄家：庄家的牌对我可见
+    if (v.proxyOn && seat === v.proxySeat && v.proxyHand) return { cards: v.proxyHand, faceUp: true }
     return { cards: null, faceUp: false }
   }
 
@@ -149,6 +159,7 @@ export default function OnlineGameTable({ tableId, onExit }: { tableId: string; 
                   : undefined
               }
               calls={seatCallChips(v.auction, seat, v.system)}
+              onCallInfo={setInfoIdx}
             />
           )
         })}
@@ -161,6 +172,7 @@ export default function OnlineGameTable({ tableId, onExit }: { tableId: string; 
               dealer={v.dealer}
               system={v.system}
               waiting={v.myTurn && mySeat ? undefined : `等待 ${v.turn ? SEAT_CN[v.turn] : ''} 叫牌…`}
+              onCallInfo={setInfoIdx}
             />
             {v.myTurn && mySeat && (
               <>
@@ -173,17 +185,20 @@ export default function OnlineGameTable({ tableId, onExit }: { tableId: string; 
 
         <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
           {v.phase === 'bidding' ? null : v.phase === 'scored' && v.result ? (
-            <ResultCard
-              row={v.result}
-              boardNo={v.boardNo}
-              boards={v.boards}
-              nsTotal={nsTotal}
-              gameOver={v.gameOver}
-              onNext={() => send({ t: 'next' })}
-              onRestart={() => send({ t: 'restart' })}
-              onExit={() => { if (mySeat) send({ t: 'leave' }); else send({ t: 'unwatch' }); onExit() }}
-              spectator={!mySeat}
-            />
+            reviewing ? null : (
+              <ResultCard
+                row={v.result}
+                boardNo={v.boardNo}
+                boards={v.boards}
+                nsTotal={nsTotal}
+                gameOver={v.gameOver}
+                onNext={() => send({ t: 'next' })}
+                onRestart={() => send({ t: 'restart' })}
+                onExit={() => { if (mySeat) send({ t: 'leave' }); else send({ t: 'unwatch' }); onExit() }}
+                spectator={!mySeat}
+                onReview={() => setReviewing(true)}
+              />
+            )
           ) : (
             <div className="flex flex-col items-center gap-2">
               {v.contract && (
@@ -192,6 +207,18 @@ export default function OnlineGameTable({ tableId, onExit }: { tableId: string; 
                     {describeContract({ ...v.contract, tricks: 0, vul: v.vul }).split(' ').slice(0, -1).join(' ')}
                   </b> · {SEAT_CN[v.contract.declarer]} 庄
                 </div>
+              )}
+              {/* AI 同伴做庄：明手可代打本副 */}
+              {v.phase === 'play' && (v.canProxy || v.proxyOn) && (
+                <Button
+                  size="sm"
+                  variant={v.proxyOn ? 'default' : 'outline'}
+                  className={cn('h-7 px-2.5 text-xs', v.proxyOn ? 'bg-amber-400 text-emerald-950 hover:bg-amber-300' : 'border-amber-300/60 bg-emerald-950/60 text-amber-200 hover:bg-emerald-900')}
+                  onClick={() => send({ t: 'proxy', on: !v.proxyOn })}
+                >
+                  <Hand className="mr-1 h-3 w-3" />
+                  {v.proxyOn ? '交还 AI 出牌' : '代打同伴（AI 庄家）'}
+                </Button>
               )}
               <div className="relative h-36 w-44 sm:h-44 sm:w-56">
                 {v.trick.map((p) => {
@@ -215,7 +242,7 @@ export default function OnlineGameTable({ tableId, onExit }: { tableId: string; 
 
         {v.phase === 'play' && v.myTurn && (
           <div className="absolute bottom-[104px] left-1/2 -translate-x-1/2 rounded-full bg-amber-400 px-2.5 py-1 text-[10px] font-bold whitespace-nowrap text-emerald-950 shadow sm:bottom-[132px] sm:px-3 sm:text-xs">
-            轮到你{v.turn !== mySeat ? '（明手）' : ''}出牌
+            轮到你{v.turn !== mySeat ? (v.proxyOn && v.turn === v.proxySeat ? '（代打庄家）' : '（明手）') : ''}出牌
             {v.trick.length > 0 && ` · 必须跟出${SUIT_LABEL[v.trick[0].card.suit]}`}
           </div>
         )}
@@ -224,6 +251,33 @@ export default function OnlineGameTable({ tableId, onExit }: { tableId: string; 
           <div className="absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-rose-600 px-3 py-1 text-xs text-white shadow">
             {lastError}
           </div>
+        )}
+
+        {/* 回顾模式：收起结果卡后显示底部操作条 */}
+        {v.phase === 'scored' && reviewing && (
+          <div className="absolute bottom-2 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full bg-emerald-950/90 px-2 py-1.5 shadow-lg">
+            <Button size="sm" variant="ghost" className="h-7 px-2.5 text-xs text-emerald-100 hover:bg-emerald-800" onClick={() => setReviewing(false)}>
+              查看结果
+            </Button>
+            {!mySeat ? (
+              <Button size="sm" variant="ghost" className="h-7 px-2.5 text-xs text-emerald-100 hover:bg-emerald-800" onClick={() => { send({ t: 'unwatch' }); onExit() }}>
+                退出旁观
+              </Button>
+            ) : v.gameOver ? (
+              <Button size="sm" className="h-7 bg-amber-400 px-2.5 text-xs text-emerald-950 hover:bg-amber-300" onClick={() => send({ t: 'restart' })}>
+                <RotateCcw className="mr-1 h-3 w-3" /> 再来一局
+              </Button>
+            ) : (
+              <Button size="sm" className="h-7 bg-amber-400 px-2.5 text-xs text-emerald-950 hover:bg-amber-300" onClick={() => send({ t: 'next' })}>
+                下一副（{v.boardNo + 1}/{v.boards}）
+              </Button>
+            )}
+          </div>
+        )}
+
+        {/* 叫品含义弹卡 */}
+        {infoIdx !== null && v.auction[infoIdx] && (
+          <CallInfoCard auction={v.auction} idx={infoIdx} system={v.system} onClose={() => setInfoIdx(null)} />
         )}
       </div>
 

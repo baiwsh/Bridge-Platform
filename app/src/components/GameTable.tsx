@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
-import { LogOut } from 'lucide-react'
+import { LogOut, Hand, RotateCcw } from 'lucide-react'
 import {
   boardDealer,
   boardVul,
@@ -31,13 +31,14 @@ import {
 } from '@/lib/game'
 import type { BiddingSystem } from '@/lib/data'
 import type { ScoreRowMsg } from '@/lib/protocol'
-import { AuctionSection, BiddingBox, BiddingOverlay, PlayingCard as PlayingCardView, ResultCard, SEAT_CN, SeatArea, seatCallChips, type SeatPlayer } from './game-ui'
+import { AuctionSection, BiddingBox, BiddingOverlay, CallInfoCard, PlayingCard as PlayingCardView, ResultCard, SEAT_CN, SeatArea, seatCallChips, type SeatPlayer } from './game-ui'
 import { cn } from '@/lib/utils'
 
 export type PlayerInfo = SeatPlayer
 
 interface GameState {
   hands: Record<Seat, CardT[]>
+  origHands: Record<Seat, CardT[]> // 本副发牌快照，供打完回顾
   auction: AuctionEntry[]
   phase: 'bidding' | 'play' | 'scored'
   turn: Seat
@@ -55,8 +56,10 @@ interface GameState {
 const SEATS: Seat[] = ['N', 'E', 'S', 'W']
 
 function freshBoard(boardNo: number): GameState {
+  const hands = dealHands()
   return {
-    hands: dealHands(),
+    hands,
+    origHands: { N: [...hands.N], E: [...hands.E], S: [...hands.S], W: [...hands.W] },
     auction: [],
     phase: 'bidding',
     dealer: boardDealer(boardNo),
@@ -90,12 +93,25 @@ export default function GameTable({
   const [boardNo, setBoardNo] = useState(1)
   const [gs, setGs] = useState<GameState>(() => freshBoard(1))
   const [scores, setScores] = useState<ScoreRowMsg[]>([])
+  const [infoIdx, setInfoIdx] = useState<number | null>(null) // 查看叫品含义
+  const [reviewing, setReviewing] = useState(false) // 收起结果卡回顾本副
+  const [proxyOn, setProxyOn] = useState(false) // 代打 AI 同伴（庄家）
   const finishedRef = useRef(false)
 
   const dummySeat = gs.contract ? partnerOf(gs.contract.declarer) : null
   const decider: Seat = gs.phase === 'play' && gs.contract && dummySeat && gs.turn === dummySeat ? gs.contract.declarer : gs.turn
+  // AI 同伴做庄时，明手（用户）可代打：庄家与明手的出牌都由用户决定
+  const proxyTurn = proxyOn && gs.phase === 'play' && gs.contract !== null && (gs.turn === gs.contract.declarer || gs.turn === dummySeat)
+  const canProxy = gs.phase === 'play' && gs.contract !== null && dummySeat === userSeat && players[gs.contract.declarer].bot
   const faceUp = (seat: Seat) =>
-    seat === userSeat || gs.phase === 'scored' || (gs.phase === 'play' && seat === dummySeat)
+    seat === userSeat || gs.phase === 'scored' || (gs.phase === 'play' && seat === dummySeat) || (proxyOn && seat === gs.contract?.declarer)
+
+  // 进入新一副后重置交互状态
+  useEffect(() => {
+    setReviewing(false)
+    setInfoIdx(null)
+    setProxyOn(false)
+  }, [boardNo])
 
   // ---- 机器人叫牌 ----
   useEffect(() => {
@@ -107,10 +123,11 @@ export default function GameTable({
     return () => clearTimeout(t)
   }, [gs, players, system])
 
-  // ---- 机器人打牌（决策者：庄家控制明手） ----
+  // ---- 机器人打牌（决策者：庄家控制明手；用户代打时跳过庄家/明手） ----
   useEffect(() => {
     if (gs.phase !== 'play' || gs.trick.length === 4) return
     const turn = gs.turn
+    if (proxyTurn) return
     if (!players[decider].bot) return
     const t = setTimeout(() => {
       setGs((prev) => {
@@ -119,7 +136,7 @@ export default function GameTable({
       })
     }, 700)
     return () => clearTimeout(t)
-  }, [gs, players, decider])
+  }, [gs, players, decider, proxyTurn])
 
   // ---- 一墩收齐后停顿再清台 ----
   useEffect(() => {
@@ -204,8 +221,9 @@ export default function GameTable({
   }
 
   const userBiddingTurn = gs.phase === 'bidding' && gs.turn === userSeat && !players[userSeat].bot
-  const userPlayTurn = gs.phase === 'play' && gs.trick.length < 4 && decider === userSeat && !players[userSeat].bot
+  const userPlayTurn = gs.phase === 'play' && gs.trick.length < 4 && (decider === userSeat || proxyTurn) && !players[userSeat].bot
   const activeLegal = userPlayTurn ? legalPlays(gs.hands[gs.turn], gs.trick) : []
+  const turnLabel = gs.turn === userSeat ? '' : proxyTurn && gs.turn === gs.contract?.declarer ? '（代打庄家）' : '（明手）'
 
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
@@ -227,7 +245,7 @@ export default function GameTable({
             seat={seat}
             pos={posOf(seat)}
             player={players[seat]}
-            cards={faceUp(seat) ? gs.hands[seat] : null}
+            cards={gs.phase === 'scored' ? gs.origHands[seat] : faceUp(seat) ? gs.hands[seat] : null}
             faceUp={faceUp(seat)}
             cardCount={gs.hands[seat].length}
             active={gs.turn === seat && gs.phase !== 'scored'}
@@ -238,6 +256,7 @@ export default function GameTable({
             isDummy={seat === dummySeat && gs.phase === 'play'}
             hcp={seat === userSeat && gs.hands[seat].length > 0 ? hcp(gs.hands[seat]) : null}
             calls={seatCallChips(gs.auction, seat, system)}
+            onCallInfo={setInfoIdx}
           />
         ))}
 
@@ -249,6 +268,7 @@ export default function GameTable({
               dealer={gs.dealer}
               system={system}
               waiting={userBiddingTurn ? undefined : `等待 ${SEAT_CN[gs.turn]} 叫牌…`}
+              onCallInfo={setInfoIdx}
             />
             {userBiddingTurn && (
               <>
@@ -261,16 +281,19 @@ export default function GameTable({
 
         <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
           {gs.phase === 'bidding' ? null : gs.phase === 'scored' && gs.result ? (
-            <ResultCard
-              row={gs.result}
-              boardNo={boardNo}
-              boards={boards}
-              nsTotal={nsTotal}
-              gameOver={gameOver}
-              onNext={nextBoard}
-              onRestart={restart}
-              onExit={onExit}
-            />
+            reviewing ? null : (
+              <ResultCard
+                row={gs.result}
+                boardNo={boardNo}
+                boards={boards}
+                nsTotal={nsTotal}
+                gameOver={gameOver}
+                onNext={nextBoard}
+                onRestart={restart}
+                onExit={onExit}
+                onReview={() => setReviewing(true)}
+              />
+            )
           ) : (
             <div className="flex flex-col items-center gap-2">
               {gs.contract && (
@@ -279,6 +302,18 @@ export default function GameTable({
                     {describeContract({ ...gs.contract, tricks: 0, vul: gs.vul }).split(' ').slice(0, -1).join(' ')}
                   </b> · {SEAT_CN[gs.contract.declarer]} 庄
                 </div>
+              )}
+              {/* AI 同伴做庄：明手可代打本副 */}
+              {gs.phase === 'play' && (canProxy || proxyOn) && (
+                <Button
+                  size="sm"
+                  variant={proxyOn ? 'default' : 'outline'}
+                  className={cn('h-7 px-2.5 text-xs', proxyOn ? 'bg-amber-400 text-emerald-950 hover:bg-amber-300' : 'border-amber-300/60 bg-emerald-950/60 text-amber-200 hover:bg-emerald-900')}
+                  onClick={() => setProxyOn((v) => !v)}
+                >
+                  <Hand className="mr-1 h-3 w-3" />
+                  {proxyOn ? '交还 AI 出牌' : '代打同伴（AI 庄家）'}
+                </Button>
               )}
               <div className="relative h-36 w-44 sm:h-44 sm:w-56">
                 {gs.trick.map((p) => {
@@ -302,8 +337,31 @@ export default function GameTable({
 
         {userPlayTurn && (
           <div className="absolute bottom-[104px] left-1/2 -translate-x-1/2 rounded-full bg-amber-400 px-2.5 py-1 text-[10px] font-bold whitespace-nowrap text-emerald-950 shadow sm:bottom-[132px] sm:px-3 sm:text-xs">
-            轮到你{gs.turn !== userSeat ? '（明手）' : ''}出牌 · 必须跟出{gs.trick.length > 0 ? '同' : '任意'}花色
+            轮到你{turnLabel}出牌 · 必须跟出{gs.trick.length > 0 ? '同' : '任意'}花色
           </div>
+        )}
+
+        {/* 回顾模式：收起结果卡后显示底部操作条 */}
+        {gs.phase === 'scored' && reviewing && (
+          <div className="absolute bottom-2 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full bg-emerald-950/90 px-2 py-1.5 shadow-lg">
+            <Button size="sm" variant="ghost" className="h-7 px-2.5 text-xs text-emerald-100 hover:bg-emerald-800" onClick={() => setReviewing(false)}>
+              查看结果
+            </Button>
+            {gameOver ? (
+              <Button size="sm" className="h-7 bg-amber-400 px-2.5 text-xs text-emerald-950 hover:bg-amber-300" onClick={restart}>
+                <RotateCcw className="mr-1 h-3 w-3" /> 再来一局
+              </Button>
+            ) : (
+              <Button size="sm" className="h-7 bg-amber-400 px-2.5 text-xs text-emerald-950 hover:bg-amber-300" onClick={nextBoard}>
+                下一副（{boardNo + 1}/{boards}）
+              </Button>
+            )}
+          </div>
+        )}
+
+        {/* 叫品含义弹卡 */}
+        {infoIdx !== null && gs.auction[infoIdx] && (
+          <CallInfoCard auction={gs.auction} idx={infoIdx} system={system} onClose={() => setInfoIdx(null)} />
         )}
       </div>
 

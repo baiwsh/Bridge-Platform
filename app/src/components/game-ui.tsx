@@ -6,6 +6,7 @@ import { Bot, User, RotateCcw, AlertCircle } from 'lucide-react'
 import { STRAIN_LABEL, describeContract, type Seat, type Strain, type Vul } from '@/lib/bridge'
 import { cardId, rankLabel, SUIT_LABEL, type CardT } from '@/lib/cards'
 import { callRules, isArtificial, STRAIN_ORDER, type AuctionEntry, type Call, type FinalContract } from '@/lib/game'
+import { callMeaning } from '@/lib/meanings'
 import type { BiddingSystem } from '@/lib/data'
 import type { ScoreRowMsg } from '@/lib/protocol'
 import { cn } from '@/lib/utils'
@@ -97,11 +98,13 @@ export function AuctionSection({
   dealer,
   system,
   waiting,
+  onCallInfo,
 }: {
   auction: AuctionEntry[]
   dealer: Seat
   system: BiddingSystem
   waiting?: string
+  onCallInfo?: (idx: number) => void
 }) {
   const [open, setOpen] = useState(false)
   const textOf = (c: Call): string => {
@@ -114,7 +117,7 @@ export function AuctionSection({
   return (
     <>
       <div className="max-sm:hidden">
-        <AuctionPanel auction={auction} dealer={dealer} system={system} waiting={waiting} />
+        <AuctionPanel auction={auction} dealer={dealer} system={system} waiting={waiting} onCallInfo={onCallInfo} />
       </div>
       <div className="flex flex-col items-center gap-1 sm:hidden">
         <button
@@ -125,9 +128,53 @@ export function AuctionSection({
           叫牌过程{recent ? ` · ${recent}` : ''}
           <span className="ml-1 text-slate-400">{open ? '▲收起' : '▼展开'}</span>
         </button>
-        {open && <AuctionPanel auction={auction} dealer={dealer} system={system} waiting={waiting} />}
+        {open && <AuctionPanel auction={auction} dealer={dealer} system={system} waiting={waiting} onCallInfo={onCallInfo} />}
       </div>
     </>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// 叫品含义弹卡：点击任意叫品（面板格子或牌前卡条）弹出
+
+export function CallInfoCard({
+  auction,
+  idx,
+  system,
+  onClose,
+}: {
+  auction: AuctionEntry[]
+  idx: number
+  system: BiddingSystem
+  onClose: () => void
+}) {
+  const m = callMeaning(auction, idx, system)
+  const seat = auction[idx]?.seat
+  return (
+    <div
+      className="absolute inset-0 z-30 flex items-center justify-center bg-emerald-950/40"
+      onClick={onClose}
+    >
+      <div
+        className="w-60 max-w-[calc(100vw-3rem)] rounded-xl border bg-white/95 p-3 shadow-xl dark:bg-slate-900"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <span className={cn('text-lg font-extrabold', (m.title.includes('♥') || m.title.includes('♦')) && 'text-rose-600')}>
+            {seat ? `${SEAT_CN[seat]} · ` : ''}{m.title}
+          </span>
+          {m.role && <Badge variant="outline" className="text-[10px]">{m.role}</Badge>}
+        </div>
+        <div className="mt-2 space-y-1">
+          {m.lines.map((ln, i) => (
+            <p key={i} className="text-xs leading-relaxed text-slate-700 dark:text-slate-200">{ln}</p>
+          ))}
+        </div>
+        <p className="mt-2 border-t pt-1.5 text-[10px] text-muted-foreground">
+          参考含义 · 按{system === 'precision' ? '精确制' : '自然制'}体系卡 · 点空白处关闭
+        </p>
+      </div>
+    </div>
   )
 }
 
@@ -213,15 +260,17 @@ export function AuctionCells({
   auction,
   dealer,
   system,
+  onCallInfo,
 }: {
   auction: AuctionEntry[]
   dealer: Seat
   system: BiddingSystem
+  onCallInfo?: (idx: number) => void
 }) {
-  const cells: ({ a: AuctionEntry } | 'empty')[] = []
+  const cells: ({ a: AuctionEntry; idx: number } | 'empty')[] = []
   const offset = { N: 0, E: 1, S: 2, W: 3 }[dealer]
   for (let i = 0; i < offset; i++) cells.push('empty')
-  auction.forEach((a) => cells.push({ a }))
+  auction.forEach((a, idx) => cells.push({ a, idx }))
 
   const textOf = (a: AuctionEntry): { text: string; artificial: boolean } => {
     const c = a.call
@@ -239,8 +288,11 @@ export function AuctionCells({
         ) : (
           <div
             key={i}
+            title={onCallInfo ? '查看叫品含义' : undefined}
+            onClick={onCallInfo ? () => onCallInfo(c.idx) : undefined}
             className={cn(
               'rounded py-0.5',
+              onCallInfo && 'cursor-pointer hover:bg-amber-100 dark:hover:bg-amber-900/40',
               c.a.call.type === 'bid'
                 ? 'bg-emerald-100 font-medium text-emerald-900 dark:bg-emerald-900/60 dark:text-emerald-100'
                 : 'text-muted-foreground'
@@ -269,6 +321,7 @@ export function AuctionPanel({
   contract,
   vul,
   waiting,
+  onCallInfo,
 }: {
   auction: AuctionEntry[]
   dealer: Seat
@@ -276,6 +329,7 @@ export function AuctionPanel({
   contract?: FinalContract | null
   vul?: Vul
   waiting?: string
+  onCallInfo?: (idx: number) => void
 }) {
   return (
     <div className="w-56 max-w-[calc(100vw-4rem)] rounded-xl border bg-white/95 p-2.5 shadow-xl sm:w-64 dark:bg-slate-900">
@@ -289,7 +343,7 @@ export function AuctionPanel({
             {SEAT_CN[s]}
           </div>
         ))}
-        <AuctionCells auction={auction} dealer={dealer} system={system} />
+        <AuctionCells auction={auction} dealer={dealer} system={system} onCallInfo={onCallInfo} />
       </div>
       {auction.length === 0 && !contract && (
         <div className="py-1 text-center text-[11px] text-muted-foreground">尚无叫品</div>
@@ -317,21 +371,24 @@ export interface CallChip {
   text: string
   red: boolean
   artificial: boolean
+  idx: number // 在 auction 中的下标（用于查看含义）
 }
 
 /** 提取某个座位的全部叫品，转为牌前小卡条数据 */
 export function seatCallChips(auction: AuctionEntry[], seat: Seat, system: BiddingSystem): CallChip[] {
   return auction
-    .filter((a) => a.seat === seat)
-    .map((a) => {
+    .map((a, idx) => ({ a, idx }))
+    .filter(({ a }) => a.seat === seat)
+    .map(({ a, idx }) => {
       const c = a.call
-      if (c.type === 'pass') return { text: 'Pass', red: false, artificial: false }
-      if (c.type === 'X') return { text: 'X', red: true, artificial: false }
-      if (c.type === 'XX') return { text: 'XX', red: true, artificial: false }
+      if (c.type === 'pass') return { text: 'Pass', red: false, artificial: false, idx }
+      if (c.type === 'X') return { text: 'X', red: true, artificial: false, idx }
+      if (c.type === 'XX') return { text: 'XX', red: true, artificial: false, idx }
       return {
         text: `${c.level}${STRAIN_LABEL[c.strain]}`,
         red: c.strain === 'H' || c.strain === 'D',
         artificial: isArtificial(c, system, true),
+        idx,
       }
     })
 }
@@ -352,6 +409,7 @@ export function SeatArea({
   hcp,
   onTakeover,
   calls,
+  onCallInfo,
 }: {
   seat: Seat
   pos: 'bottom' | 'left' | 'top' | 'right'
@@ -368,6 +426,7 @@ export function SeatArea({
   hcp?: number | null // 自己手牌的大牌点
   onTakeover?: () => void // 旁观者接管该 AI 座位
   calls?: CallChip[] // 该座位已叫的叫品，展示在自己牌前（靠桌心一侧）
+  onCallInfo?: (idx: number) => void // 点击叫品查看体系含义
 }) {
   const nameTag = (
     <div
@@ -415,18 +474,34 @@ export function SeatArea({
         horizontal ? 'max-w-[12rem] justify-center sm:max-w-[16rem]' : 'max-w-[5.5rem] sm:max-w-[7rem]'
       )}
     >
-      {calls.map((c, i) => (
-        <span
-          key={i}
-          className={cn(
-            'rounded bg-white/90 px-1 py-px text-[9px] font-semibold leading-tight shadow sm:text-[10px]',
-            c.red ? 'text-rose-600' : 'text-slate-700'
-          )}
-        >
-          {c.text}
-          {c.artificial && <span className="ml-px text-amber-500" title="人为约定叫">•</span>}
-        </span>
-      ))}
+      {calls.map((c, i) =>
+        onCallInfo ? (
+          <button
+            type="button"
+            key={i}
+            onClick={() => onCallInfo(c.idx)}
+            title="查看叫品含义"
+            className={cn(
+              'rounded bg-white/90 px-1 py-px text-[9px] font-semibold leading-tight shadow hover:bg-amber-100 sm:text-[10px]',
+              c.red ? 'text-rose-600' : 'text-slate-700'
+            )}
+          >
+            {c.text}
+            {c.artificial && <span className="ml-px text-amber-500">•</span>}
+          </button>
+        ) : (
+          <span
+            key={i}
+            className={cn(
+              'rounded bg-white/90 px-1 py-px text-[9px] font-semibold leading-tight shadow sm:text-[10px]',
+              c.red ? 'text-rose-600' : 'text-slate-700'
+            )}
+          >
+            {c.text}
+            {c.artificial && <span className="ml-px text-amber-500" title="人为约定叫">•</span>}
+          </span>
+        )
+      )}
     </div>
   )
 
@@ -475,6 +550,7 @@ export function ResultCard({
   onRestart,
   onExit,
   spectator,
+  onReview,
 }: {
   row: ScoreRowMsg
   boardNo: number
@@ -485,6 +561,7 @@ export function ResultCard({
   onRestart: () => void
   onExit: () => void
   spectator?: boolean
+  onReview?: () => void // 收起结果卡，回顾刚打完的四家牌
 }) {
   return (
     <div className="w-64 max-w-[calc(100vw-2.5rem)] rounded-xl border bg-white/95 p-4 text-center shadow-xl dark:bg-slate-900">
@@ -497,6 +574,11 @@ export function ResultCard({
       <div className="mt-2 border-t pt-2 text-sm">
         累计：<b className="tabular-nums">NS {nsTotal >= 0 ? '+' : ''}{nsTotal}</b>
       </div>
+      {onReview && (
+        <Button size="sm" variant="ghost" className="mt-1.5 h-7 w-full text-xs text-emerald-700" onClick={onReview}>
+          收起看牌 · 回顾本副四家牌
+        </Button>
+      )}
       {spectator ? (
         <div className="mt-3 space-y-2">
           {gameOver && (

@@ -48,6 +48,7 @@ interface SeatHolder {
 
 interface RoomGameState {
   hands: Record<Seat, CardT[]>
+  origHands: Record<Seat, CardT[]> // 本副发牌快照，供打完回顾
   auction: AuctionEntry[]
   phase: 'bidding' | 'play' | 'scored'
   turn: Seat
@@ -86,6 +87,8 @@ export class Room {
   gs: RoomGameState | null = null
 
   private timer: NodeJS.Timeout | null = null
+  /** 明手真人代打 AI 庄家：本副内庄家（与明手）的出牌由该 userId 操作 */
+  private proxyBy: string | null = null
   private onChange: () => void
 
   constructor(opts: {
@@ -149,6 +152,21 @@ export class Room {
     return null
   }
 
+  /** 明手真人代打 AI 庄家：仅限打牌阶段、自己是明手、庄家是纯 AI */
+  setProxy(userId: string, on: boolean): string | null {
+    const gs = this.gs
+    if (!gs || gs.phase !== 'play' || !gs.contract) return '当前不能代打'
+    const mySeat = this.seatOf(userId)
+    if (mySeat === null) return '你不在座位上'
+    const dummy = partnerOf(gs.contract.declarer)
+    if (mySeat !== dummy) return '只有明手可以代打庄家'
+    const h = this.seats[gs.contract.declarer]
+    if (!h || h.kind !== 'bot' || h.managed) return '庄家不是 AI，不能代打'
+    this.proxyBy = on ? userId : null
+    this.schedule()
+    return null
+  }
+
   /** 指定座位入座（每日赛真人固定坐南，保证其成绩记为南北分） */
   joinAt(user: PublicUser, seat: Seat): Seat | null {
     const existing = this.seatOf(user.id)
@@ -175,6 +193,7 @@ export class Room {
 
   disconnect(userId: string) {
     const seat = this.seatOf(userId)
+    if (this.proxyBy === userId) this.proxyBy = null // 代打者断线：交还 AI
     if (!seat) return
     this.seats[seat]!.online = false
     // 断线（关页面/掉线）：普通房保留席位并 AI 托管，重连后恢复手动；
@@ -265,8 +284,11 @@ export class Room {
 
   private newBoard(boardNo: number) {
     const dealer = boardDealer(boardNo)
+    this.proxyBy = null // 每副重置代打状态
+    const hands = this.seedDeal ? this.seedDeal() : dealHands()
     this.gs = {
-      hands: this.seedDeal ? this.seedDeal() : dealHands(),
+      hands,
+      origHands: { N: [...hands.N], E: [...hands.E], S: [...hands.S], W: [...hands.W] },
       auction: [],
       phase: 'bidding',
       turn: dealer,
@@ -332,8 +354,11 @@ export class Room {
     if (mySeat === null) return '你不在座位上'
     this.resume(userId)
     const dummy = partnerOf(gs.contract!.declarer)
-    // 只能打自己的牌；庄家可代明手
-    const controls = mySeat === turn || (turn === dummy && mySeat === gs.contract!.declarer)
+    // 只能打自己的牌；庄家可代明手；明手真人可代打 AI 庄家（含明手自己）
+    const controls =
+      mySeat === turn ||
+      (turn === dummy && mySeat === gs.contract!.declarer) ||
+      (this.proxyBy === userId && (turn === gs.contract!.declarer || turn === dummy))
     if (!controls) return '还没轮到你'
     const legal = legalPlays(gs.hands[turn], gs.trick)
     if (!legal.some((c) => cardId(c) === cardId(card))) return '必须跟出同花色牌'
@@ -441,6 +466,8 @@ export class Room {
       const turn = gs.turn
       const dummy = partnerOf(gs.contract!.declarer)
       const decider = turn === dummy ? gs.contract!.declarer : turn
+      // 明手真人代打中：庄家与明手的出牌都交给真人，AI 不动作
+      if (this.proxyBy && (turn === gs.contract!.declarer || turn === dummy)) return
       if (!this.botDriven(decider)) return
       this.timer = setTimeout(() => {
         const card = choosePlay(gs.hands[turn], gs.trick, gs.trump, turn)
@@ -505,7 +532,18 @@ export class Room {
       base.dummySeat = dummy
       base.dummyHand = gs.hands[dummy]
     }
-    if (gs.phase === 'scored') base.allHands = gs.hands
+    if (gs.phase === 'scored') base.allHands = gs.origHands // 回顾展示本副发牌
+
+    // 代打视图：我是明手且庄家是纯 AI → 可代打；已开启 → 庄家的牌对我可见
+    if ((gs.phase === 'play' || gs.phase === 'scored') && mySeat !== null && gs.contract) {
+      const declarer = gs.contract.declarer
+      const dummy = partnerOf(declarer)
+      const dh = this.seats[declarer]
+      base.canProxy = gs.phase === 'play' && mySeat === dummy && !!dh && dh.kind === 'bot' && !dh.managed
+      base.proxyOn = this.proxyBy === userId
+      base.proxySeat = base.proxyOn ? declarer : null
+      base.proxyHand = base.proxyOn ? gs.hands[declarer] : null
+    }
 
     // 我的行动权
     if (mySeat !== null) {
@@ -514,7 +552,8 @@ export class Room {
       } else if (gs.phase === 'play' && gs.trick.length < 4) {
         const dummy = partnerOf(gs.contract!.declarer)
         const decider = gs.turn === dummy ? gs.contract!.declarer : gs.turn
-        base.myTurn = decider === mySeat
+        const proxied = this.proxyBy === userId && (gs.turn === gs.contract!.declarer || gs.turn === dummy)
+        base.myTurn = decider === mySeat || proxied
         if (base.myTurn) {
           base.legalPlayIds = legalPlays(gs.hands[gs.turn], gs.trick).map(cardId)
         }
