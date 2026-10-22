@@ -9,10 +9,15 @@ app/release/
 app/shots/
 app/docs/pdf-qa-*/
 
-# 运行时数据
+# 运行时数据（账号/会话/每日赛成绩，含敏感信息，绝不可入库）
 app/server/data/
+app/data/
+*.json.backup
 
 # 日志与临时文件
 *.log
 *.tmp
 .DS_Store
+
+# WorkBuddy 工作区元数据
+.workbuddy/

@@ -5,6 +5,7 @@ import {
   boardVul,
   contractScore,
   describeContract,
+  nsImp,
   seatPartnership,
   type Seat,
   type Vul,
@@ -392,6 +393,8 @@ export class Room {
         nsScore,
         tricksNS: gs.tricksNS,
         tricksEW: gs.tricksEW,
+        // 队式赛模式：按副换算 IMP，累计后即为该桌的最终胜负依据
+        imp: this.scoring === 'imp' ? nsImp(nsScore) : undefined,
       }
       gs.phase = 'scored'
       this.scores.push(gs.result)

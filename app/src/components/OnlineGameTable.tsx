@@ -26,6 +26,12 @@ export default function OnlineGameTable({ tableId, onExit }: { tableId: string; 
   const v = view && view.tableId === tableId ? view : null
 
   const nsTotal = useMemo(() => (v ? v.scores.reduce((s, r) => s + r.nsScore, 0) : 0), [v])
+  // 队式赛（IMP）：逐副换算后累计；双人赛（MP）：不计
+  const impMode = v?.scoring === 'imp'
+  const impTotal = useMemo(
+    () => (impMode && v ? v.scores.reduce((s, r) => s + (r.imp ?? 0), 0) : 0),
+    [impMode, v]
+  )
   const boardNo = v?.boardNo
   // 进入新一副后自动退出回顾模式并关掉含义弹卡
   useEffect(() => {
@@ -284,7 +290,7 @@ export default function OnlineGameTable({ tableId, onExit }: { tableId: string; 
       <div className="space-y-3">
         <Card>
           <CardContent className="p-3">
-            <div className="mb-2 text-sm font-semibold">记分板（复式分）</div>
+            <div className="mb-2 text-sm font-semibold">记分板（{impMode ? 'IMP' : '复式分'}）</div>
             {v.scores.length === 0 ? (
               <p className="text-xs text-muted-foreground">每副结束后记录南北得分。</p>
             ) : (
@@ -292,17 +298,34 @@ export default function OnlineGameTable({ tableId, onExit }: { tableId: string; 
                 {v.scores.map((r) => (
                   <div key={r.board} className="flex items-center justify-between rounded bg-muted/60 px-2 py-1">
                     <span>#{r.board} {r.contract}</span>
-                    <span className={cn('font-bold tabular-nums', r.nsScore >= 0 ? 'text-emerald-600' : 'text-rose-600')}>
-                      {r.nsScore > 0 ? '+' : ''}{r.nsScore}
+                    <span className="flex items-center gap-2">
+                      {impMode && (
+                        <span className={cn('rounded bg-background px-1.5 py-0.5 font-bold tabular-nums', (r.imp ?? 0) >= 0 ? 'text-emerald-600' : 'text-rose-600')}>
+                          {(r.imp ?? 0) > 0 ? '+' : ''}{r.imp ?? 0} IMP
+                        </span>
+                      )}
+                      <span className={cn('font-bold tabular-nums', r.nsScore >= 0 ? 'text-emerald-600' : 'text-rose-600')}>
+                        {r.nsScore > 0 ? '+' : ''}{r.nsScore}
+                      </span>
                     </span>
                   </div>
                 ))}
               </div>
             )}
             <div className="mt-2 flex justify-between border-t pt-2 text-sm font-bold">
-              <span>南北合计</span>
-              <span className="tabular-nums">{nsTotal >= 0 ? '+' : ''}{nsTotal}</span>
+              <span>南北合计{impMode ? '（IMP）' : ''}</span>
+              <span className={cn('tabular-nums', impMode && (impTotal >= 0 ? 'text-emerald-600' : 'text-rose-600'))}>
+                {impMode
+                  ? `${impTotal >= 0 ? '+' : ''}${impTotal} IMP`
+                  : `${nsTotal >= 0 ? '+' : ''}${nsTotal}`}
+              </span>
             </div>
+            {impMode && (
+              <div className="mt-1 flex justify-between text-xs text-muted-foreground">
+                <span>累计净分</span>
+                <span className="tabular-nums">{nsTotal >= 0 ? '+' : ''}{nsTotal}</span>
+              </div>
+            )}
           </CardContent>
         </Card>
 

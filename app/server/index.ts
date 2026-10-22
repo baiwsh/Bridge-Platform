@@ -1,5 +1,5 @@
 // BridgeHub 服务端：REST（账号）+ WebSocket（牌桌与对局同步）
-import express from 'express'
+import express, { type Request } from 'express'
 import { createServer } from 'node:http'
 import { WebSocketServer, WebSocket } from 'ws'
 import { join, dirname } from 'node:path'
@@ -10,20 +10,34 @@ import { Room, TableManager } from './rooms'
 import { dailyDeal, dailyState, hasPlayed, recordDailyBoard } from './daily'
 import { todayEvent } from '../src/lib/data'
 import type { ClientMsg, ServerMsg, Seat } from '../src/lib/protocol'
+import {
+  apiLimiter,
+  authLimiter,
+  clientIp,
+  JSON_LIMIT,
+  securityHeaders,
+  wsAllowed,
+} from './security'
 
 const PORT = parseInt(process.env.PORT ?? '8100')
 const __dir = dirname(fileURLToPath(import.meta.url))
 
 const app = express()
-app.use(express.json())
+// 全局：安全响应头
+app.use(securityHeaders)
+// 账号接口载荷极小，严格限制请求体大小，防超大 payload
+app.use(express.json({ limit: JSON_LIMIT }))
+
+// 限制页面 http://localhost:<port> 未来发展。信任反向代理后才启用 nginx.conf 会透传一级代理，X-Forwarded-For 解析
+// （Nginx 已在 deploy/nginx.conf 中配置 X-Forwarded-For）
 
 // ---------- REST：账号 ----------
 
-app.get('/api/health', (_req, res) => {
+app.get('/api/health', apiLimiter, (_req, res) => {
   res.json({ ok: true, name: 'BridgeHub', time: new Date().toISOString() })
 })
 
-app.post('/api/register', (req, res) => {
+app.post('/api/register', authLimiter, (req, res) => {
   const { username, nickname, password } = req.body ?? {}
   if (!username || !password) return res.status(400).json({ error: '缺少用户名或密码' })
   const { user, error } = registerUser(String(username), String(nickname ?? ''), String(password))
@@ -32,15 +46,17 @@ app.post('/api/register', (req, res) => {
   res.json({ token, user: publicUser(user) })
 })
 
-app.post('/api/login', (req, res) => {
+// 登录失败文案统一为「用户名或密码不正确」，避免通过报错差异枚举出已注册账号
+app.post('/api/login', authLimiter, (req, res) => {
   const { username, password } = req.body ?? {}
-  const { user, error } = loginUser(String(username ?? ''), String(password ?? ''))
-  if (error || !user) return res.status(401).json({ error })
+  if (!username || !password) return res.status(401).json({ error: '用户名或密码不正确' })
+  const { user, error } = loginUser(String(username), String(password))
+  if (error || !user) return res.status(401).json({ error: '用户名或密码不正确' })
   const token = createSession(user.id)
   res.json({ token, user: publicUser(user) })
 })
 
-app.get('/api/me', (req, res) => {
+app.get('/api/me', apiLimiter, (req, res) => {
   const token = String(req.headers.authorization ?? '').replace(/^Bearer\s+/i, '')
   const user = userByToken(token)
   if (!user) return res.status(401).json({ error: '未登录或会话已过期' })
@@ -96,10 +112,19 @@ function broadcastAll() {
 manager.onLobbyChange(broadcastAll)
 
 wss.on('connection', (ws, req) => {
+  const ip = clientIp(req as Request)
+  if (!wsAllowed(ip, false)) {
+    send(ws, { t: 'error', message: '连接过于频繁，请稍后再试' })
+    ws.close()
+    return
+  }
+
   const url = new URL(req.url ?? '', 'http://localhost')
   const token = url.searchParams.get('token') ?? ''
   const user = userByToken(token)
   if (!user) {
+    // 认证失败计入失败窗口（不额外占用连接额度）
+    wsAllowed(ip, true)
     send(ws, { t: 'error', message: '认证失败，请重新登录' })
     ws.close()
     return

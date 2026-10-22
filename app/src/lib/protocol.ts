@@ -32,6 +32,8 @@ export interface ScoreRowMsg {
   nsScore: number
   tricksNS: number
   tricksEW: number
+  /** 队式赛（IMP）模式下南北方本副所得 IMP；双人赛模式为 0/未设置 */
+  imp?: number
 }
 
 /** 服务端推送给某个玩家的个性化牌局视图（只含自己能看到的牌） */

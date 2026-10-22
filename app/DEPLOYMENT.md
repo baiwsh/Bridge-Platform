@@ -66,6 +66,9 @@ User=www-data
 WorkingDirectory=/opt/bridgehub/app
 Environment=PORT=8100
 Environment=BRIDGEHUB_DATA=/var/lib/bridgehub
+# 位于 Nginx 反代之后时必须启用：否则客户端 IP 全被识别为 127.0.0.1，
+# 内置限流会把全体用户挤进同一个配额桶（详见「部署手册」5.4 节）
+Environment=TRUST_PROXY=1
 ExecStart=/usr/bin/node dist-server/index.js
 Restart=always
 RestartSec=3
@@ -213,11 +216,21 @@ BOT_BID_MS=60 BOT_PLAY_MS=60 TRICK_CLEAR_MS=150 node ws-test.mjs   # 双客户�
 | `PORT` | `8100` | 后端监听端口 |
 | `BRIDGEHUB_DATA` | `server/data` | 账号 JSON 数据目录 |
 | `BOT_BID_MS` / `BOT_PLAY_MS` / `TRICK_CLEAR_MS` | `650/750/1100` | AI 行动节奏（毫秒），调小可加速测试 |
+| `TRUST_PROXY` | 不信任 | **反代部署必须设为 `1`**，否则客户端 IP 恒为 `127.0.0.1`，限流失效且误伤全体用户 |
+| `BEHIND_HTTPS` | 不发送 HSTS | 设为 `1` 下发 `Strict-Transport-Security`，确认全站 HTTPS 后再开 |
+| `JSON_LIMIT` | `32kb` | REST 请求体上限，超限返回 413 |
+| `AUTH_RATE_MAX` / `AUTH_RATE_WINDOW_MS` | `20` / `300000` | 注册/登录的单 IP 配额（5 分钟 20 次） |
+| `API_RATE_MAX` / `API_RATE_WINDOW_MS` | `120` / `60000` | 其余 REST 接口的单 IP 配额 |
+
+> v1.7.0 起后端内置 IP 限流、安全响应头与 WebSocket 接入限流（`server/security.ts`，零额外依赖）。
+> 反代场景下请务必确认 `TRUST_PROXY=1` 已生效，并且 Nginx 的 `/ws` 块内**重复声明**了
+> `X-Forwarded-For`（Nginx 的同名指令继承陷阱）。完整说明见 `docs/部署手册.md` 第 5、7 章。
 
 ## 5. 常见问题
 
 | 问题 | 原因与解决 |
 | --- | --- |
+| 登录提示「操作过于频繁」且**所有人同时**受影响 | `TRUST_PROXY=1` 未生效，后端只看到 `127.0.0.1`；同时检查 Nginx `/ws` 块的转发头 |
 | 大厅一直显示「单机模式」 | 前端连不上后端。查 `systemctl status bridgehub` 与 Nginx 的 `/api`、`/ws` 反代 |
 | 入座后画面停在「正在连接牌桌」 | WebSocket 没通。确认 Nginx `location /ws` 的 `Upgrade`/`Connection` 头配置 |
 | 刷新 404 | 生产模式由后端托管 SPA 无此问题；若自行用 Nginx 托管 `dist/`，需 `try_files $uri $uri/ /index.html;` |

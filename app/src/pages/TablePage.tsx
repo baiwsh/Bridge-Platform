@@ -122,6 +122,7 @@ export default function TablePage() {
           players={game.players}
           userSeat={game.userSeat}
           system={table.system}
+          scoring={table.scoring}
           boards={table.boards}
           onExit={() => setGame(null)}
           onFinish={() => recordCasualGame()}

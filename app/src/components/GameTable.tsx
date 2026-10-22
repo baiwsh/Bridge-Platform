@@ -9,6 +9,7 @@ import {
   boardVul,
   contractScore,
   describeContract,
+  nsImp,
   VUL_LABEL,
   seatPartnership,
   type Seat,
@@ -29,7 +30,7 @@ import {
   type FinalContract,
   type TrickPlay,
 } from '@/lib/game'
-import type { BiddingSystem } from '@/lib/data'
+import type { BiddingSystem, ScoringMode } from '@/lib/data'
 import type { ScoreRowMsg } from '@/lib/protocol'
 import { AuctionSection, BiddingBox, BiddingOverlay, CallInfoCard, PlayingCard as PlayingCardView, ResultCard, SEAT_CN, SeatArea, seatCallChips, type SeatPlayer } from './game-ui'
 import { cn } from '@/lib/utils'
@@ -79,6 +80,7 @@ export default function GameTable({
   players,
   userSeat,
   system,
+  scoring = 'mp',
   boards,
   onExit,
   onFinish,
@@ -86,6 +88,7 @@ export default function GameTable({
   players: Record<Seat, PlayerInfo>
   userSeat: Seat
   system: BiddingSystem
+  scoring?: ScoringMode
   boards: number
   onExit: () => void
   onFinish?: (nsTotal: number, ewTotal: number) => void
@@ -179,7 +182,14 @@ export default function GameTable({
       const decTricks = seatPartnership(c.declarer) === 'NS' ? tricksNS : tricksEW
       const scored = contractScore({ level: c.level, strain: c.strain, doubled: c.doubled, declarer: c.declarer, tricks: decTricks, vul: prev.vul })
       const nsScore = seatPartnership(c.declarer) === 'NS' ? scored.score : -scored.score
-      result = { board: boardNo, contract: describeContract({ level: c.level, strain: c.strain, doubled: c.doubled, declarer: c.declarer, tricks: decTricks, vul: prev.vul }), nsScore, tricksNS, tricksEW }
+      result = {
+        board: boardNo,
+        contract: describeContract({ level: c.level, strain: c.strain, doubled: c.doubled, declarer: c.declarer, tricks: decTricks, vul: prev.vul }),
+        nsScore,
+        tricksNS,
+        tricksEW,
+        imp: scoring === 'imp' ? nsImp(nsScore) : undefined,
+      }
     }
     return { ...prev, hands, trick, turn: winner, tricksNS, tricksEW, phase: done ? 'scored' : 'play', result }
   }
@@ -193,6 +203,8 @@ export default function GameTable({
   }, [gs.phase, gs.result])
 
   const nsTotal = scores.reduce((s, r) => s + r.nsScore, 0)
+  const impMode = scoring === 'imp'
+  const impTotal = impMode ? scores.reduce((s, r) => s + (r.imp ?? 0), 0) : 0
   const gameOver = gs.phase === 'scored' && boardNo >= boards
 
   useEffect(() => {
@@ -368,7 +380,7 @@ export default function GameTable({
       <div className="space-y-3">
         <Card>
           <CardContent className="p-3">
-            <div className="mb-2 text-sm font-semibold">记分板（复式分）</div>
+            <div className="mb-2 text-sm font-semibold">记分板（{impMode ? 'IMP' : '复式分'}）</div>
             {scores.length === 0 ? (
               <p className="text-xs text-muted-foreground">每副结束后记录南北得分。</p>
             ) : (
@@ -376,17 +388,34 @@ export default function GameTable({
                 {scores.map((r) => (
                   <div key={r.board} className="flex items-center justify-between rounded bg-muted/60 px-2 py-1">
                     <span>#{r.board} {r.contract}</span>
-                    <span className={cn('font-bold tabular-nums', r.nsScore >= 0 ? 'text-emerald-600' : 'text-rose-600')}>
-                      {r.nsScore > 0 ? '+' : ''}{r.nsScore}
+                    <span className="flex items-center gap-2">
+                      {impMode && (
+                        <span className={cn('rounded bg-background px-1.5 py-0.5 font-bold tabular-nums', (r.imp ?? 0) >= 0 ? 'text-emerald-600' : 'text-rose-600')}>
+                          {(r.imp ?? 0) > 0 ? '+' : ''}{r.imp ?? 0} IMP
+                        </span>
+                      )}
+                      <span className={cn('font-bold tabular-nums', r.nsScore >= 0 ? 'text-emerald-600' : 'text-rose-600')}>
+                        {r.nsScore > 0 ? '+' : ''}{r.nsScore}
+                      </span>
                     </span>
                   </div>
                 ))}
               </div>
             )}
             <div className="mt-2 flex justify-between border-t pt-2 text-sm font-bold">
-              <span>南北合计</span>
-              <span className="tabular-nums">{nsTotal >= 0 ? '+' : ''}{nsTotal}</span>
+              <span>南北合计{impMode ? '（IMP）' : ''}</span>
+              <span className={cn('tabular-nums', impMode && (impTotal >= 0 ? 'text-emerald-600' : 'text-rose-600'))}>
+                {impMode
+                  ? `${impTotal >= 0 ? '+' : ''}${impTotal} IMP`
+                  : `${nsTotal >= 0 ? '+' : ''}${nsTotal}`}
+              </span>
             </div>
+            {impMode && (
+              <div className="mt-1 flex justify-between text-xs text-muted-foreground">
+                <span>累计净分</span>
+                <span className="tabular-nums">{nsTotal >= 0 ? '+' : ''}{nsTotal}</span>
+              </div>
+            )}
           </CardContent>
         </Card>
 

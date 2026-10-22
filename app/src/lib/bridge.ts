@@ -164,8 +164,7 @@ export function contractScore(c: ContractInput): ContractResult {
 }
 
 /** 描述定约，如 4♠X */
-export function contractLabel(level: number, strain: Strain, doubled: Doubled): string {
-  return `${level}${STRAIN_LABEL[strain]}${doubled === 'none' ? '' : doubled}`
+export function contractLabel(level: number, strain: Strain, doubled: Doubled): string {  return `${level}${STRAIN_LABEL[strain]}${doubled === 'none' ? '' : doubled}`
 }
 
 /** 结果串，如 "4♠X N +1" */
@@ -174,6 +173,62 @@ export function describeContract(c: ContractInput): string {
   const diff = c.tricks - need
   const res = diff === 0 ? '=' : diff > 0 ? `+${diff}` : `${diff}`
   return `${contractLabel(c.level, c.strain, c.doubled)} ${c.declarer} ${res}`
+}
+
+// ---------------------------------------------------------------------------
+// 队式赛国际序分（IMP）换算：WBF 标准换算表
+
+/**
+ * WBF 标准 IMP 换算表。
+ * 键为该副牌的净分差下限，值为对应 IMP。查表时取不超过净分的最大下限。
+ */
+const IMP_TABLE: ReadonlyArray<readonly [minDiff: number, imp: number]> = [
+  [4000, 24],
+  [3500, 23],
+  [3000, 22],
+  [2500, 21],
+  [2250, 20],
+  [2000, 19],
+  [1750, 18],
+  [1500, 17],
+  [1300, 16],
+  [1100, 15],
+  [900, 14],
+  [750, 13],
+  [600, 12],
+  [500, 11],
+  [430, 10],
+  [370, 9],
+  [320, 8],
+  [270, 7],
+  [220, 6],
+  [170, 5],
+  [130, 4],
+  [90, 3],
+  [50, 2],
+  [20, 1],
+  [0, 0],
+]
+
+/**
+ * 净分差 → IMP。传入南北视角的分差（绝对值），返回 IMP 数（0–24）。
+ * 例：南北净胜 450 → 10 IMP；净负 100 → 3 IMP。
+ */
+export function toImp(diff: number): number {
+  const abs = Math.abs(Math.trunc(diff))
+  for (const [min, imp] of IMP_TABLE) {
+    if (abs >= min) return imp
+  }
+  return 0
+}
+
+/**
+ * 一副牌南北方净得分 → 南北方 IMP。
+ * 南北净胜为正 IMP，净负为负 IMP（便于累计与展示）。
+ */
+export function nsImp(nsScore: number): number {
+  if (nsScore === 0) return 0
+  return nsScore > 0 ? toImp(nsScore) : -toImp(nsScore)
 }
 
 // ---------------------------------------------------------------------------

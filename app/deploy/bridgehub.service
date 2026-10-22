@@ -8,6 +8,9 @@ User=www-data
 WorkingDirectory=/opt/bridgehub/app
 Environment=PORT=8100
 Environment=BRIDGEHUB_DATA=/var/lib/bridgehub
+# 位于 Nginx 反代之后，需信任 X-Forwarded-For 取真实客户端 IP，
+# 否则所有请求的 IP 都被识别为 127.0.0.1，限流会把全体用户挤进同一个配额桶
+Environment=TRUST_PROXY=1
 ExecStart=/usr/bin/node dist-server/index.js
 Restart=always
 RestartSec=3
