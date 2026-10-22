@@ -216,15 +216,20 @@ BOT_BID_MS=60 BOT_PLAY_MS=60 TRICK_CLEAR_MS=150 node ws-test.mjs   # 双客户�
 | `PORT` | `8100` | 后端监听端口 |
 | `BRIDGEHUB_DATA` | `server/data` | 账号 JSON 数据目录 |
 | `BOT_BID_MS` / `BOT_PLAY_MS` / `TRICK_CLEAR_MS` | `650/750/1100` | AI 行动节奏（毫秒），调小可加速测试 |
-| `TRUST_PROXY` | 不信任 | **反代部署必须设为 `1`**，否则客户端 IP 恒为 `127.0.0.1`，限流失效且误伤全体用户 |
+| `TRUST_PROXY` | 不信任 | **反代部署必须设为 `1`**，否则客户端 IP 恒为 `127.0.0.1`，限流失效且误伤全体用户。前提：应用只通过会覆写 `X-Real-IP` 的反向代理暴露 |
+| `TRUST_PROXY_HOPS` | `1` | 可信代理层数（v1.7.1 起）；决定 `X-Forwarded-For` 从右往左数第几段是真实客户端 IP |
 | `BEHIND_HTTPS` | 不发送 HSTS | 设为 `1` 下发 `Strict-Transport-Security`，确认全站 HTTPS 后再开 |
 | `JSON_LIMIT` | `32kb` | REST 请求体上限，超限返回 413 |
 | `AUTH_RATE_MAX` / `AUTH_RATE_WINDOW_MS` | `20` / `300000` | 注册/登录的单 IP 配额（5 分钟 20 次） |
 | `API_RATE_MAX` / `API_RATE_WINDOW_MS` | `120` / `60000` | 其余 REST 接口的单 IP 配额 |
 
 > v1.7.0 起后端内置 IP 限流、安全响应头与 WebSocket 接入限流（`server/security.ts`，零额外依赖）。
-> 反代场景下请务必确认 `TRUST_PROXY=1` 已生效，并且 Nginx 的 `/ws` 块内**重复声明**了
-> `X-Forwarded-For`（Nginx 的同名指令继承陷阱）。完整说明见 `docs/部署手册.md` 第 5、7 章。
+> 反代场景下请务必确认 `TRUST_PROXY=1` 已生效，并且 Nginx 的 `/ws` 块内**重复声明**了转发头
+> （Nginx 的同名指令继承陷阱）。完整说明见 `docs/部署手册.md` 第 5、7 章。
+>
+> **v1.7.0 存在限流可被绕过的缺陷**（`clientIp()` 取 `X-Forwarded-For` 最左侧，而该字段是追加语义，
+> 客户端伪造一个值就能拿到全新配额），已在 **v1.7.1** 修复：改为优先取 Nginx 覆写的 `X-Real-IP`，
+> XFF 取最右侧。**所有 v1.7.0 实例请升级到 v1.7.1**。
 
 ## 5. 常见问题
 

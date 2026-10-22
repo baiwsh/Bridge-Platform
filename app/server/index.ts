@@ -28,8 +28,9 @@ app.use(securityHeaders)
 // 账号接口载荷极小，严格限制请求体大小，防超大 payload
 app.use(express.json({ limit: JSON_LIMIT }))
 
-// 限制页面 http://localhost:<port> 未来发展。信任反向代理后才启用 nginx.conf 会透传一级代理，X-Forwarded-For 解析
-// （Nginx 已在 deploy/nginx.conf 中配置 X-Forwarded-For）
+// 说明：客户端真实 IP 由 clientIp() 统一解析（限流键），见 server/security.ts。
+// 仅在「应用只通过会覆写 X-Real-IP / X-Forwarded-For 的反向代理对外暴露」时才设 TRUST_PROXY=1，
+// 否则客户端可伪造这些头绕过限流。Nginx 头透传见 deploy/nginx.conf。
 
 // ---------- REST：账号 ----------
 

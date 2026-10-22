@@ -45,12 +45,37 @@ interface Window {
 
 const buckets = new Map<string, Window>()
 
-/** 客户端 IP：优先信任反向代理透传的一级代理头 */
+/**
+ * 客户端 IP：仅在 TRUST_PROXY=1 时采纳反向代理透传的头。
+ *
+ * 取值顺序很重要，取错会让限流形同虚设：
+ * 1) X-Real-IP —— Nginx 侧 `proxy_set_header X-Real-IP $remote_addr` 是无条件覆写，
+ *    客户端自带值会被替换掉，因此这个值不可伪造，最可信。
+ * 2) X-Forwarded-For —— Nginx 的 `$proxy_add_x_forwarded_for` 是「追加」语义，
+ *    链路形如 `<客户端伪造的任意值>, <真实客户端IP>`。**必须取右侧**，
+ *    取左侧的话攻击者换一个 XFF 就能拿到全新配额，直接绕过限流。
+ * 3) 都不存在（直连场景）时回落到 socket 地址。
+ *
+ * 注意：只有在确认应用「仅通过会覆写上述头的反向代理对外暴露」时才设置 TRUST_PROXY=1。
+ */
 export function clientIp(req: Request): string {
   if (process.env.TRUST_PROXY === '1') {
+    // 1) X-Real-IP：由代理覆写，优先使用
+    const real = req.headers['x-real-ip']
+    if (typeof real === 'string' && real.trim().length > 0) {
+      return real.split(',')[0]!.trim()
+    }
+    // 2) XFF：从右往左数 TRUST_PROXY_HOPS 段，跳过客户端伪造部分
     const fwd = req.headers['x-forwarded-for']
-    if (typeof fwd === 'string' && fwd.length > 0) {
-      return fwd.split(',')[0]!.trim()
+    if (typeof fwd === 'string' && fwd.trim().length > 0) {
+      const parts = fwd
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0)
+      if (parts.length > 0) {
+        const hops = Math.max(1, parseInt(process.env.TRUST_PROXY_HOPS ?? '1') || 1)
+        return parts[Math.max(0, parts.length - hops)]!
+      }
     }
   }
   return req.ip || req.socket.remoteAddress || 'unknown'

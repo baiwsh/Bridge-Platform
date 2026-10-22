@@ -2,7 +2,7 @@
 
 **在线桥牌活动平台** —— 免下载、打开浏览器即玩。快速匹配、好友约战、人机练习、每日双人赛，支持**精确制**与**自然制**两种叫牌体系，内置标准**双人赛（MP）记分规则**。
 
-[![Version](https://img.shields.io/badge/version-1.7.0-blue)](https://github.com/baiwsh/Bridge-Platform/releases/tag/v1.7.0)
+[![Version](https://img.shields.io/badge/version-1.7.1-blue)](https://github.com/baiwsh/Bridge-Platform/releases/tag/v1.7.1)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org/)
 
@@ -19,7 +19,7 @@
 | 📖 两种叫牌体系 | 牌桌可选**精确制（Precision Club）**或**自然制（标准美式 / 二盖一）**，内置完整约定卡速查 |
 | 🧮 双人赛记分 | 复式定约计分 + 比赛分（Matchpoints）排名，与线下双人赛规则一致 |
 | 🏅 队式赛记分 | **v1.7.0 新增**：WBF 标准国际序分（IMP）换算，每副折算后累计，支持 MP / IMP 两种计分方式 |
-| 🔒 安全加固 | **v1.7.0 新增**：安全响应头、IP 限流与退避惩罚、请求体限制、账号枚举防护、WebSocket 接入限流 |
+| 🔒 安全加固 | **v1.7.0 新增**：安全响应头、IP 限流与退避惩罚、请求体限制、账号枚举防护、WebSocket 接入限流；**v1.7.1** 修正限流键取值，伪造 `X-Forwarded-For` 不再能绕过限流 |
 | 📱 多端适配 | 桌面、平板、手机全端自适应，手机端专属叫盘面版与紧凑牌桌 |
 | 🔌 联机对战 | WebSocket 实时同步；玩家掉线自动 AI 托管，重连恢复手动 |
 
@@ -107,12 +107,14 @@ PORT=8100 npm start    # 单进程服务前端 + REST + WebSocket
 
 ## 🔒 服务端安全
 
-v1.7.0 起后端内置零依赖安全模块 `server/security.ts`：
+v1.7.0 起后端内置零依赖安全模块 `server/security.ts`（v1.7.1 修正限流键取值）：
 
 - REST 请求体上限 32KB；下发 CSP / X-Frame-Options / COOP-CORP 等安全响应头并隐藏技术栈
 - 注册、登录等认证接口按 IP 限流，超限进入指数退避惩罚期（响应带 `Retry-After`）
 - WebSocket 按 IP 限制新建连接与认证失败次数
 - 登录失败统一文案，防止账号枚举
+- 客户端 IP 优先取反向代理覆写的 `X-Real-IP`，`X-Forwarded-For` 取最右侧，
+  因此伪造 XFF 无法获得新的配额桶（v1.7.1）
 
 > **部署注意**：后端位于 Nginx 之后时，必须设置 `TRUST_PROXY=1`，
 > 且 Nginx 的 `/ws` 块内需重复声明 `X-Forwarded-For`（Nginx 同名指令不继承），
@@ -124,7 +126,7 @@ v1.7.0 起后端内置零依赖安全模块 `server/security.ts`：
 ```bash
 cd app
 npx tsx engine-test.mts   # 引擎回测：240 副守恒与合法性校验
-npx tsx imp-test.mts      # v1.7.0：IMP 换算与安全配置自检
+npx tsx imp-test.mts      # IMP 换算（50 个 WBF 边界取样）、安全配置、限流键防伪造自检
 ```
 
 ## 📄 许可证
