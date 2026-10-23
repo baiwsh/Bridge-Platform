@@ -35,9 +35,11 @@ export function PlayingCard({
   playable?: boolean
   onClick?: () => void
 }) {
+  // 牌面尺寸：v1.8.0 起整体放大 50%（原 36×28 / 48×36 → 54×42 / 72×54），
+  // 点数与花色字号同步 ×1.5，手机上也能一眼看清
   const size = small
-    ? 'h-9 w-7 text-[10px] sm:h-11 sm:w-8 sm:text-xs'
-    : 'h-12 w-9 text-xs sm:h-14 sm:w-10 sm:text-sm'
+    ? 'h-[54px] w-[42px] text-[15px] sm:h-[66px] sm:w-[48px] sm:text-[18px]'
+    : 'h-[72px] w-[54px] text-[18px] sm:h-[84px] sm:w-[60px] sm:text-[21px]'
   if (faceDown || !card) {
     return (
       <div className={cn('rounded-md border border-emerald-950 bg-gradient-to-br from-emerald-700 to-emerald-900 shadow-sm', size)}>
@@ -58,12 +60,12 @@ export function PlayingCard({
       )}
     >
       {/* 角标纵向堆叠：即使牌被遮挡，左侧窄条也能同时读出点数与花色 */}
-      <span className="absolute left-0.5 top-0.5 flex flex-col items-center leading-[1.05]">
+      <span className="absolute left-1 top-0.5 flex flex-col items-center leading-[1.05]">
         <span>{rankLabel(card.rank)}</span>
         <span>{SUIT_LABEL[card.suit]}</span>
       </span>
       {!small && (
-        <span className="absolute bottom-0.5 right-0.5 rotate-180 leading-none opacity-60">{SUIT_LABEL[card.suit]}</span>
+        <span className="absolute bottom-1 right-1 rotate-180 leading-none opacity-60">{SUIT_LABEL[card.suit]}</span>
       )}
     </button>
   )
@@ -80,7 +82,7 @@ export function BiddingOverlay({ children }: { children: ReactNode }) {
     if (el) el.scrollTop = el.scrollHeight
   })
   return (
-    <div className="absolute inset-x-0 bottom-[96px] flex max-h-[46%] justify-center sm:bottom-[118px] sm:max-h-[calc(100%-140px)]">
+    <div className="absolute inset-x-0 bottom-[120px] flex max-h-[46%] justify-center sm:bottom-[146px] sm:max-h-[calc(100%-180px)]">
       <div ref={ref} className="flex max-h-full flex-col items-center gap-2 overflow-y-auto px-1 py-1">
         {children}
       </div>
@@ -459,6 +461,17 @@ export function SeatArea({
   )
 
   const horizontal = pos === 'bottom' || pos === 'top'
+  // 与 PlayingCard 的 small 判定保持一致。牌放大后（宽 54/60 / 42/48、高 72/84 / 54/66），
+  // 按牌堆实际宽度选择重叠幅度，让 13 张牌仍能完整落在牌桌可视范围内：
+  // 重叠后每张牌的可见角标区域（约 24-30px）不小于放大前
+  const cardSmall = !isUser && !userPlayTurn
+  const spreadCls = horizontal
+    ? cardSmall
+      ? '-space-x-[16px] sm:-space-x-1 lg:space-x-0'
+      : '-space-x-[30px] sm:-space-x-[20px] lg:-space-x-1'
+    : cardSmall
+      ? '-space-y-[32px] flex-col sm:-space-y-[36px]'
+      : '-space-y-[52px] flex-col sm:-space-y-[56px]'
   const posCls = {
     bottom: 'bottom-1.5 left-1/2 -translate-x-1/2 flex-col items-center sm:bottom-2',
     top: 'top-14 left-1/2 -translate-x-1/2 flex-col items-center sm:top-9',
@@ -510,13 +523,13 @@ export function SeatArea({
       {pos !== 'bottom' && nameTag}
       {pos === 'bottom' && callStrip}
       {faceUp && cards ? (
-        // 明牌（自己 / 明手）：缩小遮挡幅度，配合纵向角标保证每张牌可读
-        <div className={cn('flex', horizontal ? '-space-x-3 sm:-space-x-1.5' : '-space-y-4 flex-col sm:-space-y-5')}>
+        // 明牌（自己 / 明手）：配合纵向角标保证每张牌的点数与花色可读
+        <div className={cn('flex', spreadCls)}>
           {cards.map((c) => (
             <PlayingCard
               key={cardId(c)}
               card={c}
-              small={!isUser && !userPlayTurn}
+              small={cardSmall}
               playable={userPlayTurn && legalIds.has(cardId(c))}
               onClick={userPlayTurn && legalIds.has(cardId(c)) ? () => onPlay(c) : undefined}
             />
@@ -524,7 +537,7 @@ export function SeatArea({
           {cards.length === 0 && <div className="text-xs text-emerald-200/50">已出完</div>}
         </div>
       ) : (
-        <div className={cn('flex items-center', horizontal ? '-space-x-7 sm:-space-x-6' : 'flex-col -space-y-9')}>
+        <div className={cn('flex items-center', horizontal ? '-space-x-[30px] sm:-space-x-[26px]' : 'flex-col -space-y-[40px] sm:-space-y-[50px]')}>
           {Array.from({ length: Math.min(cardCount, 5) }).map((_, i) => (
             <PlayingCard key={i} faceDown small />
           ))}

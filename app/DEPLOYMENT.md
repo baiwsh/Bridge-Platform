@@ -215,7 +215,7 @@ BOT_BID_MS=60 BOT_PLAY_MS=60 TRICK_CLEAR_MS=150 node ws-test.mjs   # 双客户�
 | --- | --- | --- |
 | `PORT` | `8100` | 后端监听端口 |
 | `BRIDGEHUB_DATA` | `server/data` | 账号 JSON 数据目录 |
-| `BOT_BID_MS` / `BOT_PLAY_MS` / `TRICK_CLEAR_MS` | `650/750/1100` | AI 行动节奏（毫秒），调小可加速测试 |
+| `BOT_BID_MS` / `BOT_PLAY_MS` / `TRICK_CLEAR_MS` | `650/750/3000` | AI 行动节奏与收墩停顿（毫秒）。`TRICK_CLEAR_MS` v1.8.0 起默认 3000（原 1100），调小可加速测试 |
 | `TRUST_PROXY` | 不信任 | **反代部署必须设为 `1`**，否则客户端 IP 恒为 `127.0.0.1`，限流失效且误伤全体用户。前提：应用只通过会覆写 `X-Real-IP` 的反向代理暴露 |
 | `TRUST_PROXY_HOPS` | `1` | 可信代理层数（v1.7.1 起）；决定 `X-Forwarded-For` 从右往左数第几段是真实客户端 IP |
 | `BEHIND_HTTPS` | 不发送 HSTS | 设为 `1` 下发 `Strict-Transport-Security`，确认全站 HTTPS 后再开 |
@@ -230,6 +230,10 @@ BOT_BID_MS=60 BOT_PLAY_MS=60 TRICK_CLEAR_MS=150 node ws-test.mjs   # 双客户�
 > **v1.7.0 存在限流可被绕过的缺陷**（`clientIp()` 取 `X-Forwarded-For` 最左侧，而该字段是追加语义，
 > 客户端伪造一个值就能拿到全新配额），已在 **v1.7.1** 修复：改为优先取 Nginx 覆写的 `X-Real-IP`，
 > XFF 取最右侧。**所有 v1.7.0 实例请升级到 v1.7.1**。
+>
+> v1.8.0 为打牌体验改动（明手首攻后摊牌、收墩停顿 3 秒、牌面放大 50%），无安全或数据格式变更；
+> 但**前后端需一起更新**（旧前端不会自行隐藏明手），且若 systemd 单元里写死了旧的
+> `TRICK_CLEAR_MS=1100` 要一并改掉，否则新的 3 秒停顿不会生效。
 
 ## 5. 常见问题
 

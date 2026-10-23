@@ -35,7 +35,8 @@ const SEATS: Seat[] = ['N', 'E', 'S', 'W']
 // AI 行动节奏（可用环境变量加速，便于自动化测试）
 const BOT_BID_MS = parseInt(process.env.BOT_BID_MS ?? '650')
 const BOT_PLAY_MS = parseInt(process.env.BOT_PLAY_MS ?? '750')
-const TRICK_CLEAR_MS = parseInt(process.env.TRICK_CLEAR_MS ?? '1100')
+/** 一墩收齐后停留多久再清台：默认 3 秒，留出看清四家出牌的时间（可用环境变量覆盖） */
+const TRICK_CLEAR_MS = parseInt(process.env.TRICK_CLEAR_MS ?? '3000')
 
 interface SeatHolder {
   kind: 'human' | 'bot'
@@ -369,6 +370,17 @@ export class Room {
     return null
   }
 
+  /**
+   * 明手是否已摊牌：按桥牌规则，首攻（本副第一张牌）打出后明手才摊开。
+   * 服务端据此裁剪视图——首攻前不下发明手牌，避免客户端提前看到。
+   */
+  private dummyRevealed(): boolean {
+    const gs = this.gs
+    if (!gs) return false
+    if (gs.phase === 'scored') return true
+    return gs.trick.length > 0 || gs.tricksNS + gs.tricksEW > 0
+  }
+
   private applyPlay(seat: Seat, card: CardT) {
     const gs = this.gs!
     gs.hands = { ...gs.hands, [seat]: gs.hands[seat].filter((c) => cardId(c) !== cardId(card)) }
@@ -529,11 +541,11 @@ export class Room {
 
     if (!gs || !this.started) return base
 
-    // 明手：打牌阶段所有人可见（与线下一致）
+    // 明手：按桥牌规则，首攻（第一张牌）打出后才摊牌，此前不下发明手牌
     if (gs.phase === 'play' || gs.phase === 'scored') {
       const dummy = partnerOf(gs.contract!.declarer)
       base.dummySeat = dummy
-      base.dummyHand = gs.hands[dummy]
+      base.dummyHand = this.dummyRevealed() ? gs.hands[dummy] : null
     }
     if (gs.phase === 'scored') base.allHands = gs.origHands // 回顾展示本副发牌
 

@@ -56,6 +56,9 @@ interface GameState {
 
 const SEATS: Seat[] = ['N', 'E', 'S', 'W']
 
+/** 一墩收齐后停留多久再清台（与服务端 TRICK_CLEAR_MS 保持一致，便于看清四家出牌） */
+const TRICK_CLEAR_MS = 3000
+
 function freshBoard(boardNo: number): GameState {
   const hands = dealHands()
   return {
@@ -106,8 +109,13 @@ export default function GameTable({
   // AI 同伴做庄时，明手（用户）可代打：庄家与明手的出牌都由用户决定
   const proxyTurn = proxyOn && gs.phase === 'play' && gs.contract !== null && (gs.turn === gs.contract.declarer || gs.turn === dummySeat)
   const canProxy = gs.phase === 'play' && gs.contract !== null && dummySeat === userSeat && players[gs.contract.declarer].bot
+  // 桥牌规则：明手在首攻（第一张牌）打出之后才摊牌，此前即使是打牌阶段也保持暗牌
+  const dummyRevealed = gs.trick.length > 0 || gs.tricksNS + gs.tricksEW > 0
   const faceUp = (seat: Seat) =>
-    seat === userSeat || gs.phase === 'scored' || (gs.phase === 'play' && seat === dummySeat) || (proxyOn && seat === gs.contract?.declarer)
+    seat === userSeat ||
+    gs.phase === 'scored' ||
+    (gs.phase === 'play' && seat === dummySeat && dummyRevealed) ||
+    (proxyOn && seat === gs.contract?.declarer)
 
   // 进入新一副后重置交互状态
   useEffect(() => {
@@ -141,12 +149,12 @@ export default function GameTable({
     return () => clearTimeout(t)
   }, [gs, players, decider, proxyTurn])
 
-  // ---- 一墩收齐后停顿再清台 ----
+  // ---- 一墩收齐后停顿 3 秒再清台，留出看清四家牌的时间 ----
   useEffect(() => {
     if (gs.trick.length !== 4) return
     const t = setTimeout(() => {
       setGs((prev) => ({ ...prev, trick: [] }))
-    }, 1100)
+    }, TRICK_CLEAR_MS)
     return () => clearTimeout(t)
   }, [gs.trick.length])
 
@@ -239,7 +247,7 @@ export default function GameTable({
 
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
-      <div className="relative min-h-[430px] overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-700 via-emerald-800 to-emerald-900 p-2 shadow-inner ring-4 ring-amber-900/50 sm:min-h-[560px] sm:p-3 sm:ring-8">
+      <div className="relative min-h-[520px] overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-700 via-emerald-800 to-emerald-900 p-2 shadow-inner ring-4 ring-amber-900/50 sm:min-h-[680px] sm:p-3 sm:ring-8">
         <div className="absolute left-2 top-2 flex max-w-[62%] flex-wrap gap-1 sm:left-3 sm:top-3 sm:gap-1.5 [&>*]:max-sm:text-[10px]">
           <Badge className="bg-emerald-950/70 text-emerald-100">第 {boardNo}/{boards} 副</Badge>
           <Badge className="bg-emerald-950/70 text-emerald-100">{VUL_LABEL[gs.vul]}</Badge>
@@ -327,7 +335,7 @@ export default function GameTable({
                   {proxyOn ? '交还 AI 出牌' : '代打同伴（AI 庄家）'}
                 </Button>
               )}
-              <div className="relative h-36 w-44 sm:h-44 sm:w-56">
+              <div className="relative h-[216px] w-[264px] sm:h-[264px] sm:w-[336px]">
                 {gs.trick.map((p) => {
                   const pos = posOf(p.seat)
                   const offset = { bottom: 'left-1/2 top-[58%] -translate-x-1/2', top: 'left-1/2 top-[6%] -translate-x-1/2', left: 'left-[8%] top-1/2 -translate-y-1/2', right: 'right-[8%] top-1/2 -translate-y-1/2' }[pos]
@@ -348,7 +356,7 @@ export default function GameTable({
         </div>
 
         {userPlayTurn && (
-          <div className="absolute bottom-[104px] left-1/2 -translate-x-1/2 rounded-full bg-amber-400 px-2.5 py-1 text-[10px] font-bold whitespace-nowrap text-emerald-950 shadow sm:bottom-[132px] sm:px-3 sm:text-xs">
+          <div className="absolute bottom-[128px] left-1/2 -translate-x-1/2 rounded-full bg-amber-400 px-2.5 py-1 text-[10px] font-bold whitespace-nowrap text-emerald-950 shadow sm:bottom-[160px] sm:px-3 sm:text-xs">
             轮到你{turnLabel}出牌 · 必须跟出{gs.trick.length > 0 ? '同' : '任意'}花色
           </div>
         )}
