@@ -35,8 +35,8 @@ const SEATS: Seat[] = ['N', 'E', 'S', 'W']
 // AI 行动节奏（可用环境变量加速，便于自动化测试）
 const BOT_BID_MS = parseInt(process.env.BOT_BID_MS ?? '650')
 const BOT_PLAY_MS = parseInt(process.env.BOT_PLAY_MS ?? '750')
-/** 一墩收齐后停留多久再清台：默认 3 秒，留出看清四家出牌的时间（可用环境变量覆盖） */
-const TRICK_CLEAR_MS = parseInt(process.env.TRICK_CLEAR_MS ?? '3000')
+/** 一墩收齐后停留多久再清台：默认 1 秒，留出看清四家出牌的时间（可用环境变量覆盖） */
+const TRICK_CLEAR_MS = parseInt(process.env.TRICK_CLEAR_MS ?? '1000')
 
 interface SeatHolder {
   kind: 'human' | 'bot'

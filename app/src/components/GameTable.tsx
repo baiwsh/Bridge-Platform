@@ -57,7 +57,7 @@ interface GameState {
 const SEATS: Seat[] = ['N', 'E', 'S', 'W']
 
 /** 一墩收齐后停留多久再清台（与服务端 TRICK_CLEAR_MS 保持一致，便于看清四家出牌） */
-const TRICK_CLEAR_MS = 3000
+const TRICK_CLEAR_MS = 1000
 
 function freshBoard(boardNo: number): GameState {
   const hands = dealHands()
@@ -149,7 +149,7 @@ export default function GameTable({
     return () => clearTimeout(t)
   }, [gs, players, decider, proxyTurn])
 
-  // ---- 一墩收齐后停顿 3 秒再清台，留出看清四家牌的时间 ----
+  // ---- 一墩收齐后停顿 1 秒再清台，留出看清四家牌的时间 ----
   useEffect(() => {
     if (gs.trick.length !== 4) return
     const t = setTimeout(() => {

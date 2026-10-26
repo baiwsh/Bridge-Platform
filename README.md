@@ -2,7 +2,7 @@
 
 **在线桥牌活动平台** —— 免下载、打开浏览器即玩。快速匹配、好友约战、人机练习、每日双人赛，支持**精确制**与**自然制**两种叫牌体系，内置标准**双人赛（MP）记分规则**。
 
-[![Version](https://img.shields.io/badge/version-1.8.0-blue)](https://github.com/baiwsh/Bridge-Platform/releases/tag/v1.8.0)
+[![Version](https://img.shields.io/badge/version-1.8.1-blue)](https://github.com/baiwsh/Bridge-Platform/releases/tag/v1.8.1)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org/)
 
@@ -20,7 +20,7 @@
 | 🧮 双人赛记分 | 复式定约计分 + 比赛分（Matchpoints）排名，与线下双人赛规则一致 |
 | 🏅 队式赛记分 | **v1.7.0 新增**：WBF 标准国际序分（IMP）换算，每副折算后累计，支持 MP / IMP 两种计分方式 |
 | 🔒 安全加固 | **v1.7.0 新增**：安全响应头、IP 限流与退避惩罚、请求体限制、账号枚举防护、WebSocket 接入限流；**v1.7.1** 修正限流键取值，伪造 `X-Forwarded-For` 不再能绕过限流 |
-| 🃏 打牌体验 | **v1.8.0 改版**：明手**首攻后才摊牌**（符合桥牌规则）、收墩停顿 3 秒便于看清本墩、牌面与点数字号放大 50% |
+| 🃏 打牌体验 | **v1.8.0 改版**：明手**首攻后才摊牌**（符合桥牌规则）、**v1.8.1** 收墩停顿 1 秒（看清本墩又不拖节奏）、牌面与点数字号放大 50% |
 | 📱 多端适配 | 桌面、平板、手机全端自适应，手机端专属叫盘面版与紧凑牌桌 |
 | 🔌 联机对战 | WebSocket 实时同步；玩家掉线自动 AI 托管，重连恢复手动 |
 
@@ -135,7 +135,7 @@ node v180-verify.mjs      # v1.8.0 打牌体验（需先起 :8100 后端与 :710
 `v180-verify.mjs` 会自动断言三项改版行为并输出截图到 `app/shots/`：
 
 1. 首攻前明手为牌背（明牌数 0），首攻落地后翻牌；
-2. 一墩 4 张收齐到清台的间隔约 3 秒；
+2. 一墩 4 张收齐到清台的间隔约 1 秒（v1.8.1 起）；
 3. 牌面实际渲染尺寸与字号较 v1.7.x 增大约 50%，且 13 张手牌不溢出视口。
 
 ## 📄 许可证

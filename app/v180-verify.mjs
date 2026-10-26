@@ -1,5 +1,5 @@
 // v1.8.0 三项改动的浏览器端验收：
-//   1) 首攻前明手不摊牌  2) 收墩后延迟 3 秒  3) 牌面尺寸与字号放大 50%
+//   1) 首攻前明手不摊牌  2) 收墩后延迟 1 秒（v1.8.1）  3) 牌面尺寸与字号放大 50%
 // 用法（需先启动后端 :8100 与 vite :7100）: node v180-verify.mjs
 import puppeteer from 'puppeteer-core'
 import { mkdirSync } from 'node:fs'
@@ -209,7 +209,7 @@ for (const vp of [
 }
 
 // ---------------- 2：收墩延迟 ----------------
-console.log('\n===== 收墩延迟（应约 3000ms，原为 1100ms）=====')
+console.log('\n===== 收墩延迟（v1.8.1 应约 1000ms，v1.8.0 为 3000ms）=====')
 try {
   const page = await session({ name: "desktop", width: 1280, height: 900 }, "clear")
   let tFull = 0
@@ -225,7 +225,7 @@ try {
   if (gap === null) { failed = true; console.log('  ✘ 未观察到完整收墩') }
   else {
     console.log(`  第 1 墩收齐 → 清台: ${gap}ms`)
-    ok(gap >= 2600 && gap <= 3800, '收墩后延迟约 3 秒', `实测 ${gap}ms`)
+    ok(gap >= 700 && gap <= 1800, '收墩后延迟约 1 秒', `实测 ${gap}ms`)
   }
   await page.close()
 } catch (e) {
