@@ -73,3 +73,29 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   座位牌堆的重叠幅度（v1.8.2 修复手机上明手牌花色被遮盖）
+   --ovx / --ovy 为相邻牌的负间距（横向用 margin-left，纵向用 margin-top）。
+   手机上按视口自适应：牌宽 42/54、13 张牌整排不得溢出牌桌，
+   同时每张牌左侧的「点数 + 花色」角标必须完整可见（不被后一张牌压住）；
+   桌面沿用放大后的固定值。
+--------------------------------------------------------------------------- */
+@media (max-width: 639px) {
+  .spread-h.spread-sm { --ovx: calc(min(26px, calc((100vw - 66px) / 12)) - 42px); --ovy: 0px }
+  .spread-h.spread-lg { --ovx: calc(min(26px, calc((100vw - 80px) / 12)) - 54px); --ovy: 0px }
+  .spread-v.spread-sm { --ovx: 0px; --ovy: -32px }
+  .spread-v.spread-lg { --ovx: 0px; --ovy: -48px }
+}
+
+@media (min-width: 640px) {
+  .spread-h.spread-sm { --ovx: -4px; --ovy: 0px }
+  .spread-h.spread-lg { --ovx: -20px; --ovy: 0px }
+  .spread-v.spread-sm { --ovx: 0px; --ovy: -36px }
+  .spread-v.spread-lg { --ovx: 0px; --ovy: -56px }
+}
+
+@media (min-width: 1024px) {
+  .spread-h.spread-sm { --ovx: 0px }
+  .spread-h.spread-lg { --ovx: -4px }
+}

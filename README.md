@@ -2,7 +2,7 @@
 
 **在线桥牌活动平台** —— 免下载、打开浏览器即玩。快速匹配、好友约战、人机练习、每日双人赛，支持**精确制**与**自然制**两种叫牌体系，内置标准**双人赛（MP）记分规则**。
 
-[![Version](https://img.shields.io/badge/version-1.8.1-blue)](https://github.com/baiwsh/Bridge-Platform/releases/tag/v1.8.1)
+[![Version](https://img.shields.io/badge/version-1.8.2-blue)](https://github.com/baiwsh/Bridge-Platform/releases/tag/v1.8.2)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org/)
 
@@ -21,6 +21,7 @@
 | 🏅 队式赛记分 | **v1.7.0 新增**：WBF 标准国际序分（IMP）换算，每副折算后累计，支持 MP / IMP 两种计分方式 |
 | 🔒 安全加固 | **v1.7.0 新增**：安全响应头、IP 限流与退避惩罚、请求体限制、账号枚举防护、WebSocket 接入限流；**v1.7.1** 修正限流键取值，伪造 `X-Forwarded-For` 不再能绕过限流 |
 | 🃏 打牌体验 | **v1.8.0 改版**：明手**首攻后才摊牌**（符合桥牌规则）、**v1.8.1** 收墩停顿 1 秒（看清本墩又不拖节奏）、牌面与点数字号放大 50% |
+| 📱 手机端可读性 | **v1.8.2 修复**：明手牌的**点数与花色不再被相邻牌遮住**——横向牌堆按视口自适应重叠、纵向牌堆角标改为单行，13 张牌也不再溢出牌桌 |
 | 📱 多端适配 | 桌面、平板、手机全端自适应，手机端专属叫盘面版与紧凑牌桌 |
 | 🔌 联机对战 | WebSocket 实时同步；玩家掉线自动 AI 托管，重连恢复手动 |
 

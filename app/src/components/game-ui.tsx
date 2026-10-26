@@ -27,19 +27,23 @@ export function PlayingCard({
   faceDown,
   small,
   playable,
+  corner = 'stack',
   onClick,
 }: {
   card?: CardT
   faceDown?: boolean
   small?: boolean
   playable?: boolean
+  /** 角标排布：stack=点数在上、花色在下（横向牌堆，靠窄边可见）；inline=点数与花色同一行（纵向牌堆，靠顶部窄条可见） */
+  corner?: 'stack' | 'inline'
   onClick?: () => void
 }) {
   // 牌面尺寸：v1.8.0 起整体放大 50%（原 36×28 / 48×36 → 54×42 / 72×54），
-  // 点数与花色字号同步 ×1.5，手机上也能一眼看清
+  // 点数与花色字号同步放大；手机上大牌点数收 1 档（16px），
+  // 让「点数+花色」角标在牌堆重叠时仍有完整可见宽度（v1.8.2）
   const size = small
     ? 'h-[54px] w-[42px] text-[15px] sm:h-[66px] sm:w-[48px] sm:text-[18px]'
-    : 'h-[72px] w-[54px] text-[18px] sm:h-[84px] sm:w-[60px] sm:text-[21px]'
+    : 'h-[72px] w-[54px] text-[16px] sm:h-[84px] sm:w-[60px] sm:text-[21px]'
   if (faceDown || !card) {
     return (
       <div className={cn('rounded-md border border-emerald-950 bg-gradient-to-br from-emerald-700 to-emerald-900 shadow-sm', size)}>
@@ -56,11 +60,18 @@ export function PlayingCard({
         'relative rounded-md border bg-white font-bold shadow-sm transition-transform dark:bg-slate-100',
         size,
         red ? 'border-rose-300 text-rose-600' : 'border-slate-300 text-slate-800',
-        playable ? 'cursor-pointer ring-2 ring-amber-400 hover:-translate-y-2' : onClick ? '' : 'cursor-default'
+        // ring-inset：高亮描边画在牌内侧，不再向外扩张压住相邻牌的角标（v1.8.2）
+        playable ? 'cursor-pointer ring-2 ring-inset ring-amber-400 hover:-translate-y-2' : onClick ? '' : 'cursor-default'
       )}
     >
-      {/* 角标纵向堆叠：即使牌被遮挡，左侧窄条也能同时读出点数与花色 */}
-      <span className="absolute left-1 top-0.5 flex flex-col items-center leading-[1.05]">
+      {/* 角标贴左上：横向牌堆纵向堆叠（窄）、纵向牌堆横向单行（扁），
+          保证任何重叠幅度下每张牌的点数与花色都完整露在外面 */}
+      <span
+        className={cn(
+          'absolute left-px top-0.5 flex leading-[1.05]',
+          corner === 'inline' ? 'flex-row items-baseline gap-0.5' : 'flex-col items-center'
+        )}
+      >
         <span>{rankLabel(card.rank)}</span>
         <span>{SUIT_LABEL[card.suit]}</span>
       </span>
@@ -461,17 +472,17 @@ export function SeatArea({
   )
 
   const horizontal = pos === 'bottom' || pos === 'top'
-  // 与 PlayingCard 的 small 判定保持一致。牌放大后（宽 54/60 / 42/48、高 72/84 / 54/66），
-  // 按牌堆实际宽度选择重叠幅度，让 13 张牌仍能完整落在牌桌可视范围内：
-  // 重叠后每张牌的可见角标区域（约 24-30px）不小于放大前
   const cardSmall = !isUser && !userPlayTurn
-  const spreadCls = horizontal
-    ? cardSmall
-      ? '-space-x-[16px] sm:-space-x-1 lg:space-x-0'
-      : '-space-x-[30px] sm:-space-x-[20px] lg:-space-x-1'
-    : cardSmall
-      ? '-space-y-[32px] flex-col sm:-space-y-[36px]'
-      : '-space-y-[52px] flex-col sm:-space-y-[56px]'
+  // 重叠幅度交给 CSS（index.css 的 .spread-*）：手机上按视口自适应，
+  // 保证「13 张不溢出牌桌」且「每张牌的角标完整可见」，桌面沿用固定值。
+  // 纵向座位（东/西）改用单行角标——纵向堆叠只有牌顶部一条窄区可见，
+  // 纵向排布的花色会被下一张牌压住（v1.8.2）
+  const corner: 'stack' | 'inline' = horizontal ? 'stack' : 'inline'
+  const spreadCls = cn(
+    horizontal ? 'spread-h' : 'spread-v flex-col',
+    cardSmall ? 'spread-sm' : 'spread-lg',
+    '[&>*:not(:first-child)]:ml-[var(--ovx,0px)] [&>*:not(:first-child)]:mt-[var(--ovy,0px)]'
+  )
   const posCls = {
     bottom: 'bottom-1.5 left-1/2 -translate-x-1/2 flex-col items-center sm:bottom-2',
     top: 'top-14 left-1/2 -translate-x-1/2 flex-col items-center sm:top-9',
@@ -523,13 +534,14 @@ export function SeatArea({
       {pos !== 'bottom' && nameTag}
       {pos === 'bottom' && callStrip}
       {faceUp && cards ? (
-        // 明牌（自己 / 明手）：配合纵向角标保证每张牌的点数与花色可读
+        // 明牌（自己 / 明手）：角标方向与堆叠方向匹配，保证每张牌的点数与花色可读
         <div className={cn('flex', spreadCls)}>
           {cards.map((c) => (
             <PlayingCard
               key={cardId(c)}
               card={c}
               small={cardSmall}
+              corner={corner}
               playable={userPlayTurn && legalIds.has(cardId(c))}
               onClick={userPlayTurn && legalIds.has(cardId(c)) ? () => onPlay(c) : undefined}
             />
@@ -537,6 +549,7 @@ export function SeatArea({
           {cards.length === 0 && <div className="text-xs text-emerald-200/50">已出完</div>}
         </div>
       ) : (
+        // 暗牌堆最多画 5 张且无角标，用固定重叠即可
         <div className={cn('flex items-center', horizontal ? '-space-x-[30px] sm:-space-x-[26px]' : 'flex-col -space-y-[40px] sm:-space-y-[50px]')}>
           {Array.from({ length: Math.min(cardCount, 5) }).map((_, i) => (
             <PlayingCard key={i} faceDown small />
