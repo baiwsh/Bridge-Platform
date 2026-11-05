@@ -35,8 +35,10 @@ const SEATS: Seat[] = ['N', 'E', 'S', 'W']
 // AI 行动节奏（可用环境变量加速，便于自动化测试）
 const BOT_BID_MS = parseInt(process.env.BOT_BID_MS ?? '650')
 const BOT_PLAY_MS = parseInt(process.env.BOT_PLAY_MS ?? '750')
-/** 一墩收齐后停留多久再清台：默认 1 秒，留出看清四家出牌的时间（可用环境变量覆盖） */
-const TRICK_CLEAR_MS = parseInt(process.env.TRICK_CLEAR_MS ?? '1000')
+/** 一墩收齐后停留多久再清台：默认 2 秒，留出看清四家出牌的时间（可用环境变量覆盖） */
+const TRICK_CLEAR_MS = parseInt(process.env.TRICK_CLEAR_MS ?? '2000')
+/** 本副最后一墩：4 张牌留在桌面便于复盘，默认 5 秒后再结算（可用环境变量覆盖） */
+const LAST_TRICK_MS = parseInt(process.env.LAST_TRICK_MS ?? '5000')
 
 interface SeatHolder {
   kind: 'human' | 'bot'
@@ -393,34 +395,38 @@ export class Room {
     const winNS = seatPartnership(winner) === 'NS'
     gs.tricksNS += winNS ? 1 : 0
     gs.tricksEW += winNS ? 0 : 1
-    const done = gs.hands.N.length === 0 && gs.contract !== null
-    if (done && gs.contract) {
-      const c = gs.contract
-      const decTricks = seatPartnership(c.declarer) === 'NS' ? gs.tricksNS : gs.tricksEW
-      const scored = contractScore({ level: c.level, strain: c.strain, doubled: c.doubled, declarer: c.declarer, tricks: decTricks, vul: gs.vul })
-      const nsScore = seatPartnership(c.declarer) === 'NS' ? scored.score : -scored.score
-      gs.result = {
-        board: this.boardNo,
-        contract: describeContract({ level: c.level, strain: c.strain, doubled: c.doubled, declarer: c.declarer, tricks: decTricks, vul: gs.vul }),
-        nsScore,
-        tricksNS: gs.tricksNS,
-        tricksEW: gs.tricksEW,
-        // 队式赛模式：按副换算 IMP，累计后即为该桌的最终胜负依据
-        imp: this.scoring === 'imp' ? nsImp(nsScore) : undefined,
-      }
-      gs.phase = 'scored'
-      this.scores.push(gs.result)
-      this.onBoardScored?.(gs.result)
-      if (this.boardNo >= this.boards && !this.hidden) {
-        // 整场结束：给真人记参赛数（每日赛由赛事模块统一结算，不在此累计）
-        for (const s of SEATS) {
-          const h = this.seats[s]
-          if (h?.kind === 'human' && h.userId) bumpGamesPlayed(h.userId)
-        }
-      }
-      return
-    }
+    // 最后一墩：4 张牌先留在桌面 LAST_TRICK_MS 便于复盘，计时结束后由 schedule 结算
+    if (gs.hands.N.length === 0 && gs.contract) return
     gs.turn = winner
+  }
+
+  /** 本副结算：算分、写记分板、整场收尾。由 schedule 在「最后一墩停留 5 秒」后调用 */
+  private finishBoard() {
+    const gs = this.gs
+    if (!gs || !gs.contract || gs.phase !== 'play') return
+    const c = gs.contract
+    const decTricks = seatPartnership(c.declarer) === 'NS' ? gs.tricksNS : gs.tricksEW
+    const scored = contractScore({ level: c.level, strain: c.strain, doubled: c.doubled, declarer: c.declarer, tricks: decTricks, vul: gs.vul })
+    const nsScore = seatPartnership(c.declarer) === 'NS' ? scored.score : -scored.score
+    gs.result = {
+      board: this.boardNo,
+      contract: describeContract({ level: c.level, strain: c.strain, doubled: c.doubled, declarer: c.declarer, tricks: decTricks, vul: gs.vul }),
+      nsScore,
+      tricksNS: gs.tricksNS,
+      tricksEW: gs.tricksEW,
+      // 队式赛模式：按副换算 IMP，累计后即为该桌的最终胜负依据
+      imp: this.scoring === 'imp' ? nsImp(nsScore) : undefined,
+    }
+    gs.phase = 'scored'
+    this.scores.push(gs.result)
+    this.onBoardScored?.(gs.result)
+    if (this.boardNo >= this.boards && !this.hidden) {
+      // 整场结束：给真人记参赛数（每日赛由赛事模块统一结算，不在此累计）
+      for (const s of SEATS) {
+        const h = this.seats[s]
+        if (h?.kind === 'human' && h.userId) bumpGamesPlayed(h.userId)
+      }
+    }
   }
 
   next(userId: string): string | null {
@@ -471,11 +477,14 @@ export class Room {
 
     if (gs.phase === 'play') {
       if (gs.trick.length === 4) {
+        // 最后一墩停留 5 秒便于复盘，其余墩停留 2 秒后清台
+        const last = gs.hands.N.length === 0 && !!gs.contract
         this.timer = setTimeout(() => {
-          gs.trick = []
+          if (last) this.finishBoard()
+          else gs.trick = []
           this.onChange()
           this.schedule()
-        }, TRICK_CLEAR_MS)
+        }, last ? LAST_TRICK_MS : TRICK_CLEAR_MS)
         return
       }
       const turn = gs.turn

@@ -57,7 +57,9 @@ interface GameState {
 const SEATS: Seat[] = ['N', 'E', 'S', 'W']
 
 /** 一墩收齐后停留多久再清台（与服务端 TRICK_CLEAR_MS 保持一致，便于看清四家出牌） */
-const TRICK_CLEAR_MS = 1000
+const TRICK_CLEAR_MS = 2000
+/** 本副最后一墩：4 张牌留在桌面便于复盘，5 秒后再弹结果卡（与服务端 LAST_TRICK_MS 一致） */
+const LAST_TRICK_MS = 5000
 
 function freshBoard(boardNo: number): GameState {
   const hands = dealHands()
@@ -149,14 +151,23 @@ export default function GameTable({
     return () => clearTimeout(t)
   }, [gs, players, decider, proxyTurn])
 
-  // ---- 一墩收齐后停顿 1 秒再清台，留出看清四家牌的时间 ----
+  // ---- 一墩收齐后停顿 2 秒再清台，留出看清四家牌的时间（最后一墩不清，见下） ----
   useEffect(() => {
-    if (gs.trick.length !== 4) return
+    if (gs.trick.length !== 4 || gs.result) return
     const t = setTimeout(() => {
       setGs((prev) => ({ ...prev, trick: [] }))
     }, TRICK_CLEAR_MS)
     return () => clearTimeout(t)
-  }, [gs.trick.length])
+  }, [gs.trick.length, gs.result])
+
+  // ---- 本副最后一墩：4 张牌先留在桌面 5 秒便于复盘，再切到记分卡 ----
+  useEffect(() => {
+    if (gs.phase !== 'play' || !gs.result) return
+    const t = setTimeout(() => {
+      setGs((prev) => ({ ...prev, phase: 'scored' }))
+    }, LAST_TRICK_MS)
+    return () => clearTimeout(t)
+  }, [gs.phase, gs.result])
 
   function applyBid(prev: GameState, call: Call): GameState {
     const auction = [...prev.auction, { seat: prev.turn, call }]
@@ -199,7 +210,7 @@ export default function GameTable({
         imp: scoring === 'imp' ? nsImp(nsScore) : undefined,
       }
     }
-    return { ...prev, hands, trick, turn: winner, tricksNS, tricksEW, phase: done ? 'scored' : 'play', result }
+    return { ...prev, hands, trick, turn: winner, tricksNS, tricksEW, phase: 'play', result }
   }
 
   // ---- 一副结束后登入记分板（按副号去重） ----
@@ -247,7 +258,7 @@ export default function GameTable({
 
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
-      <div className="relative min-h-[520px] overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-700 via-emerald-800 to-emerald-900 p-2 shadow-inner ring-4 ring-amber-900/50 sm:min-h-[680px] sm:p-3 sm:ring-8">
+      <div className="relative min-h-[600px] overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-700 via-emerald-800 to-emerald-900 p-2 shadow-inner ring-4 ring-amber-900/50 sm:min-h-[800px] sm:p-3 sm:ring-8">
         <div className="absolute left-2 top-2 flex max-w-[62%] flex-wrap gap-1 sm:left-3 sm:top-3 sm:gap-1.5 [&>*]:max-sm:text-[10px]">
           <Badge className="bg-emerald-950/70 text-emerald-100">第 {boardNo}/{boards} 副</Badge>
           <Badge className="bg-emerald-950/70 text-emerald-100">{VUL_LABEL[gs.vul]}</Badge>
@@ -335,13 +346,13 @@ export default function GameTable({
                   {proxyOn ? '交还 AI 出牌' : '代打同伴（AI 庄家）'}
                 </Button>
               )}
-              <div className="relative h-[216px] w-[264px] sm:h-[264px] sm:w-[336px]">
+              <div className="relative h-[200px] w-[calc(100vw-166px)] sm:h-[316px] sm:w-[376px]">
                 {gs.trick.map((p) => {
                   const pos = posOf(p.seat)
-                  const offset = { bottom: 'left-1/2 top-[58%] -translate-x-1/2', top: 'left-1/2 top-[6%] -translate-x-1/2', left: 'left-[8%] top-1/2 -translate-y-1/2', right: 'right-[8%] top-1/2 -translate-y-1/2' }[pos]
+                  const offset = { bottom: 'left-1/2 top-[58%] -translate-x-1/2', top: 'left-1/2 top-[6%] -translate-x-1/2', left: 'left-0 top-1/2 -translate-y-1/2 sm:left-[8%]', right: 'right-0 top-1/2 -translate-y-1/2 sm:right-[8%]' }[pos]
                   return (
                     <div key={cardId(p.card)} className={cn('absolute', offset)}>
-                      <PlayingCardView card={p.card} />
+                      <PlayingCardView card={p.card} trick />
                     </div>
                   )
                 })}
@@ -356,7 +367,7 @@ export default function GameTable({
         </div>
 
         {userPlayTurn && (
-          <div className="absolute bottom-[128px] left-1/2 -translate-x-1/2 rounded-full bg-amber-400 px-2.5 py-1 text-[10px] font-bold whitespace-nowrap text-emerald-950 shadow sm:bottom-[160px] sm:px-3 sm:text-xs">
+          <div className="absolute bottom-[152px] left-1/2 -translate-x-1/2 rounded-full bg-amber-400 px-2.5 py-1 text-[10px] font-bold whitespace-nowrap text-emerald-950 shadow sm:bottom-[192px] sm:px-3 sm:text-xs">
             轮到你{turnLabel}出牌 · 必须跟出{gs.trick.length > 0 ? '同' : '任意'}花色
           </div>
         )}

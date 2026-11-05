@@ -1,5 +1,5 @@
-// v1.8.0 三项改动的浏览器端验收：
-//   1) 首攻前明手不摊牌  2) 收墩后延迟 1 秒（v1.8.1）  3) 牌面尺寸与字号放大 50%
+// 牌桌改动的浏览器端验收：
+//   1) 首攻前明手不摊牌  2) 收墩停顿 2 秒、最后一墩停 5 秒（v1.8.3）  3) 牌面再放大 50%
 // 用法（需先启动后端 :8100 与 vite :7100）: node v180-verify.mjs
 import puppeteer from 'puppeteer-core'
 import { mkdirSync } from 'node:fs'
@@ -69,7 +69,7 @@ const PROBE = () => {
   const dummyLabel = [...document.querySelectorAll('span')].find((s) => (s.textContent || '').includes('（明手）'))
   const seatRoot = dummyLabel ? dummyLabel.closest('div.absolute') : null
   const dummyFaceUp = seatRoot ? [...seatRoot.querySelectorAll('button')].filter(cardBtn).length : -1
-  const center = document.querySelector('div[class*="w-[264px]"], div[class*="w-[336px]"]')
+  const center = document.querySelector('div[class*="w-[300px]"], div[class*="w-[376px]"]')
   const trickCount = center ? [...center.querySelectorAll('button')].filter(cardBtn).length : -1
   const cardEl = suitBtns[0]
   const rect = cardEl ? cardEl.getBoundingClientRect() : null
@@ -191,12 +191,14 @@ for (const vp of [
     ok(after.dummyFaceUp === 13, '首攻后明手已摊牌（13 张明牌）', `实测 ${after.dummyFaceUp}`)
 
     console.log(`  牌尺寸: ${after.cardW}×${after.cardH}px, 字号 ${after.fontSize}px`)
-    const wantW = vp.width < 640 ? 54 : 60
-    const wantH = vp.width < 640 ? 72 : 84
-    const wantFs = vp.width < 640 ? 18 : 21
-    ok(Math.abs(after.cardW - wantW) <= 2, `牌宽 ≈ ${wantW}px（原 36/40 的 1.5 倍）`, `实测 ${after.cardW}`)
-    ok(Math.abs(after.cardH - wantH) <= 2, `牌高 ≈ ${wantH}px（原 48/56 的 1.5 倍）`, `实测 ${after.cardH}`)
-    ok(Math.abs(after.fontSize - wantFs) <= 2, `字号 ≈ ${wantFs}px（原 12/14 的 1.5 倍）`, `实测 ${after.fontSize}`)
+    // v1.8.3：在 v1.8.0 的 54×72 / 60×84 基础上再放大 50% → 81×108 / 90×126
+    const wantW = vp.width < 640 ? 81 : 90
+    const wantH = vp.width < 640 ? 108 : 126
+    // 手机字号由 clamp((100vw - 143px)/14) 决定；桌面固定 30px
+    const wantFs = vp.width < 640 ? 18 : 30
+    ok(Math.abs(after.cardW - wantW) <= 2, `牌宽 ≈ ${wantW}px（v1.8.0 基础上再 +50%）`, `实测 ${after.cardW}`)
+    ok(Math.abs(after.cardH - wantH) <= 2, `牌高 ≈ ${wantH}px（v1.8.0 基础上再 +50%）`, `实测 ${after.cardH}`)
+    ok(Math.abs(after.fontSize - wantFs) <= 2, `字号 ≈ ${wantFs}px（桌面 21→30）`, `实测 ${after.fontSize}`)
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
     ok(overflow <= 1, '页面无横向溢出', `${overflow}px`)
@@ -209,7 +211,7 @@ for (const vp of [
 }
 
 // ---------------- 2：收墩延迟 ----------------
-console.log('\n===== 收墩延迟（v1.8.1 应约 1000ms，v1.8.0 为 3000ms）=====')
+console.log('\n===== 收墩延迟（v1.8.3 起应约 2000ms；v1.8.1 为 1000ms）=====')
 try {
   const page = await session({ name: "desktop", width: 1280, height: 900 }, "clear")
   let tFull = 0
@@ -225,7 +227,7 @@ try {
   if (gap === null) { failed = true; console.log('  ✘ 未观察到完整收墩') }
   else {
     console.log(`  第 1 墩收齐 → 清台: ${gap}ms`)
-    ok(gap >= 700 && gap <= 1800, '收墩后延迟约 1 秒', `实测 ${gap}ms`)
+    ok(gap >= 1600 && gap <= 2700, '收墩后延迟约 2 秒', `实测 ${gap}ms`)
   }
   await page.close()
 } catch (e) {

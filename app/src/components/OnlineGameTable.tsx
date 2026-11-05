@@ -132,7 +132,7 @@ export default function OnlineGameTable({ tableId, onExit }: { tableId: string; 
   // ---------- 对局阶段 ----------
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
-      <div className="relative min-h-[520px] overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-700 via-emerald-800 to-emerald-900 p-2 shadow-inner ring-4 ring-amber-900/50 sm:min-h-[680px] sm:p-3 sm:ring-8">
+      <div className="relative min-h-[600px] overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-700 via-emerald-800 to-emerald-900 p-2 shadow-inner ring-4 ring-amber-900/50 sm:min-h-[800px] sm:p-3 sm:ring-8">
         <div className="absolute left-2 top-2 flex max-w-[62%] flex-wrap gap-1 sm:left-3 sm:top-3 sm:gap-1.5 [&>*]:max-sm:text-[10px]">
           <Badge className="bg-emerald-950/70 text-emerald-100">第 {v.boardNo}/{v.boards} 副</Badge>
           <Badge className="bg-emerald-950/70 text-emerald-100">{VUL_LABEL[v.vul]}</Badge>
@@ -231,13 +231,13 @@ export default function OnlineGameTable({ tableId, onExit }: { tableId: string; 
                   {v.proxyOn ? '交还 AI 出牌' : '代打同伴（AI 庄家）'}
                 </Button>
               )}
-              <div className="relative h-[216px] w-[264px] sm:h-[264px] sm:w-[336px]">
+              <div className="relative h-[200px] w-[calc(100vw-166px)] sm:h-[316px] sm:w-[376px]">
                 {v.trick.map((p) => {
                   const pos = posOf(p.seat)
-                  const offset = { bottom: 'left-1/2 top-[58%] -translate-x-1/2', top: 'left-1/2 top-[6%] -translate-x-1/2', left: 'left-[8%] top-1/2 -translate-y-1/2', right: 'right-[8%] top-1/2 -translate-y-1/2' }[pos]
+                  const offset = { bottom: 'left-1/2 top-[58%] -translate-x-1/2', top: 'left-1/2 top-[6%] -translate-x-1/2', left: 'left-0 top-1/2 -translate-y-1/2 sm:left-[8%]', right: 'right-0 top-1/2 -translate-y-1/2 sm:right-[8%]' }[pos]
                   return (
                     <div key={cardId(p.card)} className={cn('absolute', offset)}>
-                      <PlayingCard card={p.card} />
+                      <PlayingCard card={p.card} trick />
                     </div>
                   )
                 })}
@@ -252,7 +252,7 @@ export default function OnlineGameTable({ tableId, onExit }: { tableId: string; 
         </div>
 
         {v.phase === 'play' && v.myTurn && (
-          <div className="absolute bottom-[128px] left-1/2 -translate-x-1/2 rounded-full bg-amber-400 px-2.5 py-1 text-[10px] font-bold whitespace-nowrap text-emerald-950 shadow sm:bottom-[160px] sm:px-3 sm:text-xs">
+          <div className="absolute bottom-[152px] left-1/2 -translate-x-1/2 rounded-full bg-amber-400 px-2.5 py-1 text-[10px] font-bold whitespace-nowrap text-emerald-950 shadow sm:bottom-[192px] sm:px-3 sm:text-xs">
             轮到你{v.turn !== mySeat ? (v.proxyOn && v.turn === v.proxySeat ? '（代打庄家）' : '（明手）') : ''}出牌
             {v.trick.length > 0 && ` · 必须跟出${SUIT_LABEL[v.trick[0].card.suit]}`}
           </div>

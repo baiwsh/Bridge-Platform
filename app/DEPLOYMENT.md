@@ -215,7 +215,7 @@ BOT_BID_MS=60 BOT_PLAY_MS=60 TRICK_CLEAR_MS=150 node ws-test.mjs   # 双客户�
 | --- | --- | --- |
 | `PORT` | `8100` | 后端监听端口 |
 | `BRIDGEHUB_DATA` | `server/data` | 账号 JSON 数据目录 |
-| `BOT_BID_MS` / `BOT_PLAY_MS` / `TRICK_CLEAR_MS` | `650/750/1000` | AI 行动节奏与收墩停顿（毫秒）。`TRICK_CLEAR_MS` v1.8.1 起默认 1000（v1.8.0 为 3000，更早为 1100），调小可加速测试 |
+| `BOT_BID_MS` / `BOT_PLAY_MS` / `TRICK_CLEAR_MS` / `LAST_TRICK_MS` | `650/750/2000/5000` | AI 行动节奏与收墩停顿（毫秒）。`TRICK_CLEAR_MS` v1.8.3 起默认 2000；`LAST_TRICK_MS`（v1.8.3 新增）为本副最后一墩停留时长，便于复盘 |
 | `TRUST_PROXY` | 不信任 | **反代部署必须设为 `1`**，否则客户端 IP 恒为 `127.0.0.1`，限流失效且误伤全体用户。前提：应用只通过会覆写 `X-Real-IP` 的反向代理暴露 |
 | `TRUST_PROXY_HOPS` | `1` | 可信代理层数（v1.7.1 起）；决定 `X-Forwarded-For` 从右往左数第几段是真实客户端 IP |
 | `BEHIND_HTTPS` | 不发送 HSTS | 设为 `1` 下发 `Strict-Transport-Security`，确认全站 HTTPS 后再开 |
@@ -234,6 +234,10 @@ BOT_BID_MS=60 BOT_PLAY_MS=60 TRICK_CLEAR_MS=150 node ws-test.mjs   # 双客户�
 > v1.8.0 为打牌体验改动（明手首攻后摊牌、收墩停顿 3 秒、牌面放大 50%），无安全或数据格式变更；
 > 但**前后端需一起更新**（旧前端不会自行隐藏明手），且若 systemd 单元里写死了旧的
 > `TRICK_CLEAR_MS=1100` 要一并改掉，否则新的停顿不会生效。
+>
+> **v1.8.3 调整牌面与节奏**：牌面再放大 50%（尺寸/字号见 `.card-face-*`）、收墩停顿改为 **2000ms**、
+> 新增最后一墩停留 **5000ms**（`LAST_TRICK_MS`）再结算。若 systemd 单元里显式写过旧的
+> `TRICK_CLEAR_MS`，需同步改掉或删除。
 >
 > **v1.8.1 只调整打牌节奏**：收墩停顿由 3000ms 改为 **1000ms**（服务端默认值与前端常量同步）。
 > 若 systemd 单元或环境文件里显式写过 `TRICK_CLEAR_MS=3000`，需同步改为 `1000` 或删除该行，

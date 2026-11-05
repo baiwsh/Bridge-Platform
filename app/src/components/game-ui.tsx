@@ -26,6 +26,7 @@ export function PlayingCard({
   card,
   faceDown,
   small,
+  trick,
   playable,
   corner = 'stack',
   onClick,
@@ -33,20 +34,21 @@ export function PlayingCard({
   card?: CardT
   faceDown?: boolean
   small?: boolean
+  /** 牌桌中央「本墩打出的牌」：手机用小一号，桌面用大牌 */
+  trick?: boolean
   playable?: boolean
   /** 角标排布：stack=点数在上、花色在下（横向牌堆，靠窄边可见）；inline=点数与花色同一行（纵向牌堆，靠顶部窄条可见） */
   corner?: 'stack' | 'inline'
   onClick?: () => void
 }) {
-  // 牌面尺寸：v1.8.0 起整体放大 50%（原 36×28 / 48×36 → 54×42 / 72×54），
-  // 点数与花色字号同步放大；手机上大牌点数收 1 档（16px），
-  // 让「点数+花色」角标在牌堆重叠时仍有完整可见宽度（v1.8.2）
-  const size = small
-    ? 'h-[54px] w-[42px] text-[15px] sm:h-[66px] sm:w-[48px] sm:text-[18px]'
-    : 'h-[72px] w-[54px] text-[16px] sm:h-[84px] sm:w-[60px] sm:text-[21px]'
+  // 牌面尺寸：v1.8.3 在 v1.8.0「放大 50%」的基础上再放大 50%
+  // （大牌 72×54 → 108×81，桌面 84×60 → 126×90；小牌同步放大）。
+  // 尺寸与字号写在 index.css 的 .card-face-* 里，手机上字号随视口自适应，
+  // 保证 13 张牌重叠后「点数 + 花色」角标仍然完整可见
+  const size = cn('rounded-md', trick ? 'card-face-trick' : small ? 'card-face-sm' : 'card-face-lg')
   if (faceDown || !card) {
     return (
-      <div className={cn('rounded-md border border-emerald-950 bg-gradient-to-br from-emerald-700 to-emerald-900 shadow-sm', size)}>
+      <div className={cn('border border-emerald-950 bg-gradient-to-br from-emerald-700 to-emerald-900 shadow-sm', size)}>
         <div className="m-1 h-[calc(100%-8px)] rounded-sm border border-emerald-400/30" />
       </div>
     )
@@ -57,7 +59,7 @@ export function PlayingCard({
       onClick={onClick}
       disabled={!onClick}
       className={cn(
-        'relative rounded-md border bg-white font-bold shadow-sm transition-transform dark:bg-slate-100',
+        'relative border bg-white font-bold shadow-sm transition-transform dark:bg-slate-100',
         size,
         red ? 'border-rose-300 text-rose-600' : 'border-slate-300 text-slate-800',
         // ring-inset：高亮描边画在牌内侧，不再向外扩张压住相邻牌的角标（v1.8.2）
@@ -93,7 +95,7 @@ export function BiddingOverlay({ children }: { children: ReactNode }) {
     if (el) el.scrollTop = el.scrollHeight
   })
   return (
-    <div className="absolute inset-x-0 bottom-[120px] flex max-h-[46%] justify-center sm:bottom-[146px] sm:max-h-[calc(100%-180px)]">
+    <div className="absolute inset-x-0 bottom-[152px] flex max-h-[46%] justify-center sm:bottom-[190px] sm:max-h-[calc(100%-210px)]">
       <div ref={ref} className="flex max-h-full flex-col items-center gap-2 overflow-y-auto px-1 py-1">
         {children}
       </div>
