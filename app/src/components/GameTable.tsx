@@ -48,6 +48,8 @@ interface GameState {
   contract: FinalContract | null
   trump: Suit | null
   trick: TrickPlay[]
+  /** 本副已打出的全部牌（含当前墩），供 AI 记牌推断剩余大牌（v1.9.0） */
+  playedCards: CardT[]
   tricksNS: number
   tricksEW: number
   passedOut: boolean
@@ -58,8 +60,29 @@ const SEATS: Seat[] = ['N', 'E', 'S', 'W']
 
 /** 一墩收齐后停留多久再清台（与服务端 TRICK_CLEAR_MS 保持一致，便于看清四家出牌） */
 const TRICK_CLEAR_MS = 2000
-/** 本副最后一墩：4 张牌留在桌面便于复盘，5 秒后再弹结果卡（与服务端 LAST_TRICK_MS 一致） */
-const LAST_TRICK_MS = 5000
+/** v1.9.0：最后一墩不再定时弹出结果卡——立即结算并无限期暂停，等玩家点「下一副」 */
+
+/** 给 AI 的合法上下文：已出的牌、定约/庄家/局况，以及庄家方能看到的明手牌 */
+function playContext(gs: GameState, seat: Seat, scoring: ScoringMode, boardNo: number) {
+  const c = gs.contract
+  if (!c) return {}
+  const declarer = c.declarer
+  const dummy = partnerOf(declarer)
+  const mySideIsDeclarer = seatPartnership(seat) === seatPartnership(declarer)
+  return {
+    played: gs.playedCards,
+    declarer,
+    strain: c.strain,
+    vul: gs.vul,
+    scoring,
+    tricksNS: gs.tricksNS,
+    tricksEW: gs.tricksEW,
+    boardNo,
+    ...(mySideIsDeclarer
+      ? { partnerHand: seat === declarer ? gs.hands[dummy] : gs.hands[declarer] }
+      : {}),
+  }
+}
 
 function freshBoard(boardNo: number): GameState {
   const hands = dealHands()
@@ -74,6 +97,7 @@ function freshBoard(boardNo: number): GameState {
     contract: null,
     trump: null,
     trick: [],
+    playedCards: [],
     tricksNS: 0,
     tricksEW: 0,
     passedOut: false,
@@ -102,7 +126,7 @@ export default function GameTable({
   const [gs, setGs] = useState<GameState>(() => freshBoard(1))
   const [scores, setScores] = useState<ScoreRowMsg[]>([])
   const [infoIdx, setInfoIdx] = useState<number | null>(null) // 查看叫品含义
-  const [reviewing, setReviewing] = useState(false) // 收起结果卡回顾本副
+  const [reviewing, setReviewing] = useState(true) // v1.9.0：结算后默认停留在牌面复盘，点「查看结果」看结果卡
   const [proxyOn, setProxyOn] = useState(false) // 代打 AI 同伴（庄家）
   const finishedRef = useRef(false)
 
@@ -119,9 +143,9 @@ export default function GameTable({
     (gs.phase === 'play' && seat === dummySeat && dummyRevealed) ||
     (proxyOn && seat === gs.contract?.declarer)
 
-  // 进入新一副后重置交互状态
+  // 进入新一副后重置交互状态（结算后默认停留在牌面复盘）
   useEffect(() => {
-    setReviewing(false)
+    setReviewing(true)
     setInfoIdx(null)
     setProxyOn(false)
   }, [boardNo])
@@ -131,10 +155,12 @@ export default function GameTable({
     if (gs.phase !== 'bidding') return
     if (!players[gs.turn].bot) return
     const t = setTimeout(() => {
-      setGs((prev) => applyBid(prev, chooseBid(prev.hands[prev.turn], prev.auction, prev.turn, system)))
+      setGs((prev) => applyBid(prev, chooseBid(prev.hands[prev.turn], prev.auction, prev.turn, system, {
+        vul: prev.vul, scoring, boardNo,
+      })))
     }, 650)
     return () => clearTimeout(t)
-  }, [gs, players, system])
+  }, [gs, players, system, scoring, boardNo])
 
   // ---- 机器人打牌（决策者：庄家控制明手；用户代打时跳过庄家/明手） ----
   useEffect(() => {
@@ -144,14 +170,14 @@ export default function GameTable({
     if (!players[decider].bot) return
     const t = setTimeout(() => {
       setGs((prev) => {
-        const card = choosePlay(prev.hands[turn], prev.trick, prev.trump, turn)
+        const card = choosePlay(prev.hands[turn], prev.trick, prev.trump, turn, playContext(prev, turn, scoring, boardNo))
         return applyPlay(prev, turn, card)
       })
     }, 700)
     return () => clearTimeout(t)
-  }, [gs, players, decider, proxyTurn])
+  }, [gs, players, decider, proxyTurn, scoring, boardNo])
 
-  // ---- 一墩收齐后停顿 2 秒再清台，留出看清四家牌的时间（最后一墩不清，见下） ----
+  // ---- 一墩收齐后停顿 2 秒再清台（最后一墩已结算，不清台、无限期暂停） ----
   useEffect(() => {
     if (gs.trick.length !== 4 || gs.result) return
     const t = setTimeout(() => {
@@ -159,15 +185,6 @@ export default function GameTable({
     }, TRICK_CLEAR_MS)
     return () => clearTimeout(t)
   }, [gs.trick.length, gs.result])
-
-  // ---- 本副最后一墩：4 张牌先留在桌面 5 秒便于复盘，再切到记分卡 ----
-  useEffect(() => {
-    if (gs.phase !== 'play' || !gs.result) return
-    const t = setTimeout(() => {
-      setGs((prev) => ({ ...prev, phase: 'scored' }))
-    }, LAST_TRICK_MS)
-    return () => clearTimeout(t)
-  }, [gs.phase, gs.result])
 
   function applyBid(prev: GameState, call: Call): GameState {
     const auction = [...prev.auction, { seat: prev.turn, call }]
@@ -186,9 +203,10 @@ export default function GameTable({
   function applyPlay(prev: GameState, seat: Seat, card: CardT): GameState {
     const hand = prev.hands[seat].filter((c) => cardId(c) !== cardId(card))
     const trick = [...prev.trick, { seat, card }]
+    const playedCards = [...prev.playedCards, card]
     const hands = { ...prev.hands, [seat]: hand }
     if (trick.length < 4) {
-      return { ...prev, hands, trick, turn: nextSeat(seat) }
+      return { ...prev, hands, trick, playedCards, turn: nextSeat(seat) }
     }
     const winner = trickWinner(trick, prev.trump)
     const winNS = seatPartnership(winner) === 'NS'
@@ -210,7 +228,9 @@ export default function GameTable({
         imp: scoring === 'imp' ? nsImp(nsScore) : undefined,
       }
     }
-    return { ...prev, hands, trick, turn: winner, tricksNS, tricksEW, phase: 'play', result }
+    // v1.9.0：最后一墩立即结算并停在 scored（牌面定格、无限期暂停），
+    // 等玩家点「下一副」才由 nextBoard() 重新发牌
+    return { ...prev, hands, trick, playedCards, turn: winner, tricksNS, tricksEW, phase: done ? 'scored' : 'play', result }
   }
 
   // ---- 一副结束后登入记分板（按副号去重） ----
@@ -311,20 +331,18 @@ export default function GameTable({
         )}
 
         <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-          {gs.phase === 'bidding' ? null : gs.phase === 'scored' && gs.result ? (
-            reviewing ? null : (
-              <ResultCard
-                row={gs.result}
-                boardNo={boardNo}
-                boards={boards}
-                nsTotal={nsTotal}
-                gameOver={gameOver}
-                onNext={nextBoard}
-                onRestart={restart}
-                onExit={onExit}
-                onReview={() => setReviewing(true)}
-              />
-            )
+          {gs.phase === 'bidding' ? null : gs.phase === 'scored' && gs.result && !reviewing ? (
+            <ResultCard
+              row={gs.result}
+              boardNo={boardNo}
+              boards={boards}
+              nsTotal={nsTotal}
+              gameOver={gameOver}
+              onNext={nextBoard}
+              onRestart={restart}
+              onExit={onExit}
+              onReview={() => setReviewing(true)}
+            />
           ) : (
             <div className="flex flex-col items-center gap-2">
               {gs.contract && (
@@ -372,11 +390,12 @@ export default function GameTable({
           </div>
         )}
 
-        {/* 回顾模式：收起结果卡后显示底部操作条 */}
+        {/* 复盘模式（v1.9.0 默认）：最后四张牌与四家牌无限期定格，点「下一副」才继续 */}
         {gs.phase === 'scored' && reviewing && (
-          <div className="absolute bottom-2 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full bg-emerald-950/90 px-2 py-1.5 shadow-lg">
+          <div className="absolute bottom-2 left-1/2 z-20 flex max-w-[calc(100vw-1rem)] -translate-x-1/2 items-center gap-2 rounded-full bg-emerald-950/90 px-2 py-1.5 shadow-lg">
+            <span className="hidden whitespace-nowrap px-1 text-[11px] text-emerald-200/80 sm:inline">本副已暂停 · 可复盘</span>
             <Button size="sm" variant="ghost" className="h-7 px-2.5 text-xs text-emerald-100 hover:bg-emerald-800" onClick={() => setReviewing(false)}>
-              查看结果
+              查看结果卡
             </Button>
             {gameOver ? (
               <Button size="sm" className="h-7 bg-amber-400 px-2.5 text-xs text-emerald-950 hover:bg-amber-300" onClick={restart}>

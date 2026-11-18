@@ -47,4 +47,10 @@ export const api = {
       body: JSON.stringify({ username, password }),
     }),
   me: () => req<{ user: PublicUser }>('/api/me'),
+  /** v1.9.0：修改昵称（牌桌显示名） */
+  updateProfile: (nickname: string) =>
+    req<{ user: PublicUser }>('/api/profile', {
+      method: 'PUT',
+      body: JSON.stringify({ nickname }),
+    }),
 }

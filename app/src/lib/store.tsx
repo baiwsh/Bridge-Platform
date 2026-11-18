@@ -61,6 +61,8 @@ interface StoreState {
   register: (username: string, nickname: string, password: string) => Promise<string | null>
   login: (username: string, password: string) => Promise<string | null>
   logout: () => void
+  /** v1.9.0：修改昵称，成功返回 null，失败返回错误文案 */
+  updateProfile: (nickname: string) => Promise<string | null>
   createTable: (t: Omit<BridgeTable, 'id' | 'seats' | 'status'>) => BridgeTable
   joinTable: (tableId: string) => void
   leaveTable: (tableId: string) => void
@@ -169,6 +171,32 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setSessionId(null)
   }
 
+  /** v1.9.0：在线走后端持久化；离线改本地用户表，并同步刷新本地牌桌座位里的旧昵称 */
+  const updateProfile: StoreState['updateProfile'] = async (rawNickname) => {
+    const nickname = rawNickname.replace(/[\u0000-\u001f\u007f<>]/g, '').trim()
+    const len = [...nickname].length
+    if (len < 1 || len > 16) return '昵称需为 1–16 个字符'
+    if (online) {
+      try {
+        const { user: u } = await api.updateProfile(nickname)
+        setOnlineUser(u as User)
+        return null
+      } catch (e) {
+        return e instanceof Error ? e.message : '修改失败'
+      }
+    }
+    if (!user) return '请先登录'
+    const old = user.nickname
+    setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, nickname } : u)))
+    setTables((prev) =>
+      prev.map((t) => ({
+        ...t,
+        seats: t.seats.map((s) => (s === old ? nickname : s)),
+      }))
+    )
+    return null
+  }
+
   const createTable: StoreState['createTable'] = (t) => {
     const table: BridgeTable = {
       ...t,
@@ -246,6 +274,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     register,
     login,
     logout,
+    updateProfile,
     createTable,
     joinTable,
     leaveTable,

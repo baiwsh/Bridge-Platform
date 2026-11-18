@@ -95,6 +95,23 @@ export function registerUser(username: string, nickname: string, password: strin
   return { user }
 }
 
+/**
+ * v1.9.0：修改昵称。昵称允许中文，1–16 个字符（按 Unicode 码点计），
+ * 去掉控制字符与尖括号（避免桌名/日志里出现换行或标签）；不要求唯一。
+ */
+export function updateNickname(userId: string, raw: string): { user?: ServerUser; error?: string } {
+  const u = db.users.find((x) => x.id === userId)
+  if (!u) return { error: '账号不存在' }
+  const nickname = String(raw ?? '')
+    .replace(/[\u0000-\u001f\u007f<>]/g, '')
+    .trim()
+  const len = [...nickname].length
+  if (len < 1 || len > 16) return { error: '昵称需为 1–16 个字符' }
+  u.nickname = nickname
+  save()
+  return { user: u }
+}
+
 export function loginUser(username: string, password: string): { user?: ServerUser; error?: string } {
   const u = db.users.find((x) => x.username === username.trim().toLowerCase())
   if (!u) return { error: '账号不存在，请先注册' }

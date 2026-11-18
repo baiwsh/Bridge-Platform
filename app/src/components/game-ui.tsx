@@ -593,7 +593,8 @@ export function ResultCard({
 }) {
   return (
     <div className="w-64 max-w-[calc(100vw-2.5rem)] rounded-xl border bg-white/95 p-4 text-center shadow-xl dark:bg-slate-900">
-      <div className="text-xs text-muted-foreground">第 {row.board} 副结束</div>
+      <div className="text-xs text-muted-foreground">第 {row.board} 副结束 · 已暂停</div>
+      <div className="mt-1 text-[11px] text-muted-foreground">点击「下一副」才会重新发牌</div>
       <div className="mt-1 text-lg font-bold">{row.contract}</div>
       <div className={cn('mt-1 text-2xl font-extrabold tabular-nums', row.nsScore >= 0 ? 'text-emerald-600' : 'text-rose-600')}>
         南北 {row.nsScore > 0 ? '+' : ''}{row.nsScore}

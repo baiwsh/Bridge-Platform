@@ -1,5 +1,5 @@
 // 牌桌改动的浏览器端验收：
-//   1) 首攻前明手不摊牌  2) 收墩停顿 2 秒、最后一墩停 5 秒（v1.8.3）  3) 牌面再放大 50%
+//   1) 首攻前明手不摊牌  2) 收墩停顿 2 秒（v1.9.0 最后一墩改为无限期暂停）  3) 牌面再放大 50%
 // 用法（需先启动后端 :8100 与 vite :7100）: node v180-verify.mjs
 import puppeteer from 'puppeteer-core'
 import { mkdirSync } from 'node:fs'

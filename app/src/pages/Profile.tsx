@@ -1,17 +1,23 @@
 import { Link } from 'react-router'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
-import { Trophy, Gamepad2, TrendingUp, CalendarDays } from 'lucide-react'
+import { Trophy, Gamepad2, TrendingUp, CalendarDays, Pencil, Check, X } from 'lucide-react'
 import { useStore } from '@/lib/store'
 import { useState } from 'react'
 import { AuthDialog } from '@/components/AuthDialog'
 import { todayEvent } from '@/lib/data'
 
 export default function Profile() {
-  const { user, entries } = useStore()
+  const { user, entries, updateProfile, online } = useStore()
   const [authOpen, setAuthOpen] = useState(!user)
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
 
   if (!user) {
     return (
@@ -26,22 +32,81 @@ export default function Profile() {
   const event = todayEvent()
   const myEntries = entries[event.id] ?? []
 
+  const startEdit = () => {
+    setDraft(user.nickname)
+    setEditing(true)
+    setMsg(null)
+  }
+
+  const save = async () => {
+    if (busy) return
+    setBusy(true)
+    setMsg(null)
+    const err = await updateProfile(draft)
+    setBusy(false)
+    if (err) {
+      setMsg({ kind: 'err', text: err })
+      return
+    }
+    setEditing(false)
+    setMsg({ kind: 'ok', text: online ? '昵称已更新，牌桌显示名同步生效' : '昵称已更新（保存在本机）' })
+  }
+
   return (
     <div className="mx-auto max-w-2xl space-y-5">
       <Card>
-        <CardContent className="flex items-center gap-4 p-6">
+        <CardContent className="flex flex-wrap items-center gap-4 p-6">
           <Avatar className="h-16 w-16">
             <AvatarFallback style={{ backgroundColor: user.color }} className="text-2xl text-white">
               {user.nickname.slice(0, 1).toUpperCase()}
             </AvatarFallback>
           </Avatar>
-          <div>
-            <h1 className="text-2xl font-bold">{user.nickname}</h1>
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-2xl font-bold">{user.nickname}</h1>
             <p className="text-sm text-muted-foreground">@{user.username} · 注册于 {user.createdAt.slice(0, 10)}</p>
           </div>
-          <Badge className="ml-auto bg-emerald-700">桥牌汇牌手</Badge>
+          <Badge className="bg-emerald-700">桥牌汇牌手</Badge>
+          {!editing && (
+            <Button size="sm" variant="outline" className="gap-1" onClick={startEdit}>
+              <Pencil className="h-3.5 w-3.5" /> 修改昵称
+            </Button>
+          )}
         </CardContent>
       </Card>
+
+      {editing && (
+        <Card>
+          <CardContent className="space-y-3 p-5">
+            <Label htmlFor="nick-edit">昵称（牌桌显示名，1–16 个字符，支持中文）</Label>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Input
+                id="nick-edit"
+                value={draft}
+                maxLength={16}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') void save() }}
+                placeholder="输入新昵称"
+                autoFocus
+              />
+              <div className="flex gap-2">
+                <Button size="sm" className="gap-1 bg-emerald-700 hover:bg-emerald-600" disabled={busy} onClick={() => void save()}>
+                  <Check className="h-3.5 w-3.5" /> {busy ? '保存中…' : '保存'}
+                </Button>
+                <Button size="sm" variant="outline" className="gap-1" disabled={busy} onClick={() => { setEditing(false); setMsg(null) }}>
+                  <X className="h-3.5 w-3.5" /> 取消
+                </Button>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              修改后个人中心、大厅与正在进行的牌桌座位名会立即更新；下次登录依然有效。
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {msg && (
+        <p className={`text-sm ${msg.kind === 'ok' ? 'text-emerald-700' : 'text-rose-600'}`}>{msg.text}</p>
+      )}
 
       <div className="grid grid-cols-3 gap-4">
         <Card>

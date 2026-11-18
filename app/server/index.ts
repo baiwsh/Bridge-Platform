@@ -5,7 +5,7 @@ import { WebSocketServer, WebSocket } from 'ws'
 import { join, dirname } from 'node:path'
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { registerUser, loginUser, createSession, userByToken, publicUser } from './db'
+import { registerUser, loginUser, createSession, userByToken, publicUser, updateNickname } from './db'
 import { Room, TableManager } from './rooms'
 import { dailyDeal, dailyState, hasPlayed, recordDailyBoard } from './daily'
 import { todayEvent } from '../src/lib/data'
@@ -62,6 +62,18 @@ app.get('/api/me', apiLimiter, (req, res) => {
   const user = userByToken(token)
   if (!user) return res.status(401).json({ error: '未登录或会话已过期' })
   res.json({ user: publicUser(user) })
+})
+
+// v1.9.0：修改昵称（牌桌显示名）。改完同步刷新在线牌桌的座位名并广播最新视图
+app.put('/api/profile', apiLimiter, (req, res) => {
+  const token = String(req.headers.authorization ?? '').replace(/^Bearer\s+/i, '')
+  const user = userByToken(token)
+  if (!user) return res.status(401).json({ error: '未登录或会话已过期' })
+  const { user: updated, error } = updateNickname(user.id, String(req.body?.nickname ?? ''))
+  if (error || !updated) return res.status(400).json({ error })
+  manager.renameUser(updated.id, updated.nickname)
+  broadcastAll()
+  res.json({ user: publicUser(updated) })
 })
 
 // ---------- 静态资源（生产模式：托管前端构建产物） ----------

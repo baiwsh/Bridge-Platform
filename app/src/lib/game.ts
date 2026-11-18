@@ -1,14 +1,25 @@
-import type { Seat, Strain, Doubled } from './bridge'
+import type { Seat, Strain, Doubled, Vul } from './bridge'
 import { seatPartnership } from './bridge'
 import {
   type CardT,
   type Suit,
+  cardId,
   evalHand,
   suitCards,
   suitCount,
   longestSuit,
 } from './cards'
-import type { BiddingSystem } from './data'
+import type { BiddingSystem, ScoringMode } from './data'
+
+/**
+ * v1.9.0：AI 叫牌上下文（公开信息，不含任何暗牌）。
+ * 局况与记分制会影响「值得一搏」的阈值：IMP 与有局时成局/满贯的收益更高。
+ */
+export interface BidContext {
+  vul?: Vul
+  scoring?: ScoringMode
+  boardNo?: number
+}
 
 // ---------------------------------------------------------------------------
 // 叫牌（拍卖）逻辑
@@ -178,8 +189,8 @@ function myLastSuit(auction: AuctionEntry[], seat: Seat): Strain | null {
   return suits.length ? suits[suits.length - 1] : null
 }
 
-/** 主叫牌入口 */
-export function chooseBid(hand: CardT[], auction: AuctionEntry[], seat: Seat, system: BiddingSystem): Call {
+/** 主叫牌入口（v1.9.0：ctx 提供局况与记分制，用于进局/争叫的收益判断） */
+export function chooseBid(hand: CardT[], auction: AuctionEntry[], seat: Seat, system: BiddingSystem, ctx: BidContext = {}): Call {
   const anyBid = auction.some((a) => a.call.type === 'bid')
   const partner = partnerOf(seat)
   const partnerBidEntries = auction.filter((a) => a.seat === partner && a.call.type === 'bid')
@@ -187,16 +198,16 @@ export function chooseBid(hand: CardT[], auction: AuctionEntry[], seat: Seat, sy
   const oppBids = auction.filter((a) => seatPartnership(a.seat) !== seatPartnership(seat) && a.call.type === 'bid')
   const rules = callRules(auction, seat)
 
-  // 末家/防守叫：对手已开叫而同伴未叫 → 简单争叫
+  // 末家/防守叫：对手已开叫而同伴未叫 → 争叫
   if (anyBid && partnerBidEntries.length === 0 && myBidEntries.length === 0 && oppBids.length > 0) {
-    return overcall(hand, auction, rules)
+    return overcall(hand, auction, rules, ctx)
   }
   if (!anyBid) return opening(hand, system)
   if (partnerBidEntries.length > 0 && myBidEntries.length === 0) {
     return respond(hand, system, partnerBidEntries[partnerBidEntries.length - 1].call as Bid, rules)
   }
   if (myBidEntries.length > 0 && partnerBidEntries.length > 0) {
-    return rebid(hand, auction, seat, system, rules)
+    return rebid(hand, auction, seat, system, rules, ctx)
   }
   return pass
 }
@@ -233,25 +244,42 @@ function opening(hand: CardT[], system: BiddingSystem): Call {
   return pass
 }
 
-function overcall(hand: CardT[], auction: AuctionEntry[], rules: ReturnType<typeof callRules>): Call {
+function overcall(hand: CardT[], auction: AuctionEntry[], rules: ReturnType<typeof callRules>, ctx: BidContext): Call {
   const ev = evalHand(hand)
   const { hcp: H, counts } = ev
   const oppLast = lastBid(auction)
   const oppStrain = oppLast && oppLast.call.type === 'bid' ? oppLast.call.strain : null
+  const oppSuit = oppStrain && oppStrain !== 'NT' ? strainToSuit(oppStrain) : null
+  void ctx
 
-  if (H >= 15 && H <= 18 && ev.balanced && oppStrain && oppStrain !== 'NT' && suitCount(hand, oppStrain as Suit) >= 3) {
-    return tryBid(1, 'NT', rules)
+  // 1NT 争叫：均型 15–18 点且敌方花色有止张（A/K/Q 或至少 3 张），否则庄家能一路兑现该套
+  if (H >= 15 && H <= 18 && ev.balanced && oppStrain && oppStrain !== 'NT') {
+    const oc = oppSuit ? suitCards(hand, oppSuit) : []
+    const stopper = oc.some((c) => c.rank >= 12) || oc.length >= 3
+    if (stopper) {
+      const c = tryBid(1, 'NT', rules)
+      if (c.type === 'bid' && c.level <= 2) return c
+    }
   }
+  // 花色争叫：套必须有一定质量（至少一张 10 以上大牌），且不被迫叫到过高的阶数
   if (H >= 12) {
     const s = ev.longest
     if (counts[s] >= 5) {
-      const lvl = bidRank(1, s) >= rules.minBidRank ? 1 : 2
-      const c = tryBid(lvl, s, rules)
-      if (c.type === 'bid') return c
+      const honors = suitCards(hand, s).filter((c) => c.rank >= 10).length
+      if (honors >= 1 || H >= 15) {
+        const lvl = bidRank(1, s) >= rules.minBidRank ? 1 : 2
+        const c = tryBid(lvl, s, rules)
+        if (c.type === 'bid' && (c.level <= 2 || H >= 16)) return c
+      }
     }
   }
-  // 技术性强牌可加倍
-  if (H >= 16 && rules.canX) return { type: 'X' }
+  // 技术性加倍：只针对一阶花色开叫，要求未叫花色有支持（典型技术性加倍牌型）或强牌
+  if (rules.canX && oppLast && oppLast.call.type === 'bid' && oppLast.call.level === 1 && oppStrain !== 'NT') {
+    const support = (['S', 'H', 'D', 'C'] as Suit[])
+      .filter((s) => s !== oppSuit)
+      .some((s) => suitCount(hand, s) >= (s === 'S' || s === 'H' ? 4 : 3))
+    if ((H >= 13 && support) || H >= 17) return { type: 'X' }
+  }
   return pass
 }
 
@@ -344,13 +372,20 @@ function respondRaw(
   return pass
 }
 
-function rebid(hand: CardT[], auction: AuctionEntry[], seat: Seat, system: BiddingSystem, rules: ReturnType<typeof callRules>): Call {
+function rebid(hand: CardT[], auction: AuctionEntry[], seat: Seat, system: BiddingSystem, rules: ReturnType<typeof callRules>, ctx: BidContext): Call {
   const ev = evalHand(hand)
   const H = ev.hcp
   const pMin = partnerMin(auction, seat, system)
   const combined = H + pMin
   const pSuit = partnerSuit(auction, seat)
   const mSuit = myLastSuit(auction, seat)
+
+  // v1.9.0：局况与记分制影响「值得一搏」的阈值——有局 / IMP 时成局与满贯的收益明显更高
+  const vul = ctx.vul ?? 'none'
+  const ourVul = vul === 'both' || vul === seatPartnership(seat)
+  const aggressive = ctx.scoring === 'imp' || ourVul
+  const slamAt = aggressive ? 32 : 33
+  const gameAt = aggressive ? 24 : 25
 
   // 同伴已叫到局/满贯 → 收兵（满贯边缘再试探从简）
   const lb = lastBid(auction)
@@ -368,11 +403,11 @@ function rebid(hand: CardT[], auction: AuctionEntry[], seat: Seat, system: Biddi
   }
   if (!fitStrain && mSuit && pSuit === mSuit) fitStrain = mSuit
 
-  if (combined >= 33) {
+  if (combined >= slamAt) {
     if (fitStrain && fitStrain !== 'NT') return tryBid(6, fitStrain, rules)
     return tryBid(6, 'NT', rules)
   }
-  if (combined >= 25) {
+  if (combined >= gameAt) {
     if (fitStrain === 'H' || fitStrain === 'S') return tryBid(4, fitStrain, rules)
     if (fitStrain === 'C' || fitStrain === 'D') {
       if (H + pMin >= 29) return tryBid(5, fitStrain, rules)
@@ -425,7 +460,11 @@ export function trickWinner(trick: TrickPlay[], trump: Suit | null): Seat {
 }
 
 // ---------------------------------------------------------------------------
-// AI 出牌：规则启发式（首攻、跟牌、垫牌、将吃）
+// AI 出牌（v1.9.0 增强）：记牌 + 剩余大牌推断 + 位置化跟牌 + 首攻约定
+//   · 旧版确定性规则保留为 choosePlayBasic，仅供 benchmark 作对照
+//   · 增强版只使用「合法可见信息」：自己的手牌、明手牌（庄家方）、已出的牌、
+//     当前墩、定约与庄家、局况；防守方拿不到任何暗牌
+// ---------------------------------------------------------------------------
 
 function lowest(cards: CardT[]): CardT {
   return [...cards].sort((a, b) => a.rank - b.rank)[0]
@@ -439,48 +478,59 @@ function wouldWin(trick: TrickPlay[], seat: Seat, card: CardT, trump: Suit | nul
   return trickWinner([...trick, { seat, card }], trump) === seat
 }
 
-/** 首攻 */
-function leadCard(hand: CardT[], trump: Suit | null): CardT {
-  const suits = (['S', 'H', 'D', 'C'] as Suit[])
-    .map((s) => ({ suit: s, cards: suitCards(hand, s) }))
-    .filter((x) => x.cards.length > 0 && (trump === null || x.suit !== trump))
-  const pool = suits.length > 0 ? suits : (['S', 'H', 'D', 'C'] as Suit[]).map((s) => ({ suit: s, cards: suitCards(hand, s) })).filter((x) => x.cards.length > 0)
-  // 优先最长且有大牌的花色
-  pool.sort((a, b) => b.cards.length - a.cards.length || hcpOf(b.cards) - hcpOf(a.cards))
-  const chosen = pool[0].cards
-  // 连张大牌攻顶张（AK、KQ、QJ）
-  if (chosen.length >= 2 && chosen[0].rank >= 12 && chosen[0].rank === chosen[1].rank + 1) return chosen[0]
-  if (chosen.length >= 4) return chosen[3] // 第四大牌
-  return lowest(chosen)
-}
-
 function hcpOf(cards: CardT[]): number {
   return cards.reduce((s, c) => s + (c.rank >= 11 ? c.rank - 10 : 0), 0)
 }
 
-/** AI 选牌主入口 */
-export function choosePlay(hand: CardT[], trick: TrickPlay[], trump: Suit | null, seat: Seat): CardT {
+/** AI 出牌可见上下文（v1.9.0）。防守方不会拿到 partnerHand。 */
+export interface PlayContext {
+  /** 本副已打出的牌（含当前墩），用于推断剩余大牌 */
+  played?: CardT[]
+  declarer?: Seat | null
+  strain?: Strain | null
+  vul?: Vul
+  scoring?: ScoringMode
+  tricksNS?: number
+  tricksEW?: number
+  boardNo?: number
+  /** 仅庄家方可见的另一手牌（庄家看明手 / 明手看庄家） */
+  partnerHand?: CardT[] | null
+}
+
+/**
+ * 某花色中「外面还有几张比 rank 大的牌」。
+ * 已见牌 = 自己手牌 + 当前墩 + 本副已出牌 + 庄家方可见的另一手。
+ */
+function outstandingHigher(suit: Suit, rank: number, hand: CardT[], trick: TrickPlay[], ctx: PlayContext): number {
+  const seen = new Set<string>()
+  for (const c of hand) seen.add(cardId(c))
+  for (const p of trick) seen.add(cardId(p.card))
+  for (const c of ctx.played ?? []) seen.add(cardId(c))
+  for (const c of ctx.partnerHand ?? []) seen.add(cardId(c))
+  let n = 0
+  for (let r = rank + 1; r <= 14; r++) if (!seen.has(`${suit}${r}`)) n++
+  return n
+}
+
+/** 确定赢张：同花色外面已没有更大的牌（不计将吃） */
+function isBoss(card: CardT, hand: CardT[], trick: TrickPlay[], ctx: PlayContext): boolean {
+  return outstandingHigher(card.suit, card.rank, hand, trick, ctx) === 0
+}
+
+/** 旧版规则，保留作基准对照（benchmark 用；生产只调 choosePlay） */
+export function choosePlayBasic(hand: CardT[], trick: TrickPlay[], trump: Suit | null, seat: Seat): CardT {
   const legal = legalPlays(hand, trick)
   if (legal.length === 1) return legal[0]
-  if (trick.length === 0) return leadCard(hand, trump)
-
+  if (trick.length === 0) return basicLead(hand, trump)
   const led = trick[0].card.suit
-  const currentWinner = trickWinner(trick, trump)
-  const partnerWinning = currentWinner === partnerOf(seat)
+  const partnerWinning = trickWinner(trick, trump) === partnerOf(seat)
   const follow = legal.filter((c) => c.suit === led)
-
   if (follow.length > 0) {
     const winners = follow.filter((c) => wouldWin(trick, seat, c, trump))
     if (partnerWinning) return lowest(follow)
-    if (winners.length > 0) {
-      const win = lowest(winners)
-      // 第三家：若能以大牌赢且后面还有一家，尽量赢但保留过大牌从简
-      return win
-    }
+    if (winners.length > 0) return lowest(winners)
     return lowest(follow)
   }
-
-  // 缺门：将吃或垫牌
   if (trump) {
     const trumps = legal.filter((c) => c.suit === trump)
     if (trumps.length > 0 && !partnerWinning) {
@@ -488,7 +538,6 @@ export function choosePlay(hand: CardT[], trick: TrickPlay[], trump: Suit | null
       if (winners.length > 0) return lowest(winners)
     }
   }
-  // 垫牌：从最短且最弱的花色垫最小牌（不垫将牌）
   const nonTrump = legal.filter((c) => c.suit !== trump)
   const pool = nonTrump.length > 0 ? nonTrump : legal
   const byWeakness = [...pool].sort((a, b) => {
@@ -497,6 +546,111 @@ export function choosePlay(hand: CardT[], trick: TrickPlay[], trump: Suit | null
     return la - lb || a.rank - b.rank
   })
   return byWeakness[0]
+}
+
+/** 旧版首攻（仅 benchmark 对照用） */
+function basicLead(hand: CardT[], trump: Suit | null): CardT {
+  const suits = (['S', 'H', 'D', 'C'] as Suit[])
+    .map((s) => ({ suit: s, cards: suitCards(hand, s) }))
+    .filter((x) => x.cards.length > 0 && (trump === null || x.suit !== trump))
+  const pool = suits.length > 0 ? suits : (['S', 'H', 'D', 'C'] as Suit[]).map((s) => ({ suit: s, cards: suitCards(hand, s) })).filter((x) => x.cards.length > 0)
+  pool.sort((a, b) => b.cards.length - a.cards.length || hcpOf(b.cards) - hcpOf(a.cards))
+  const chosen = pool[0].cards
+  if (chosen.length >= 2 && chosen[0].rank >= 12 && chosen[0].rank === chosen[1].rank + 1) return chosen[0]
+  if (chosen.length >= 4) return chosen[3]
+  return lowest(chosen)
+}
+
+/** 增强版首攻 / 领出 */
+function leadCard(hand: CardT[], trump: Suit | null, ctx: PlayContext, openingLead: boolean): CardT {
+  // 非首攻领出：无将定约（或将牌本身）持有「确定赢张」时先兑现，避免残局被垫掉
+  if (!openingLead) {
+    const bosses = hand.filter((c) => (trump === null || c.suit === trump) && isBoss(c, hand, [], ctx))
+    if (bosses.length > 0) return highest(bosses)
+  }
+
+  const suits = (['S', 'H', 'D', 'C'] as Suit[])
+    .map((s) => ({ suit: s, cards: suitCards(hand, s) }))
+    .filter((x) => x.cards.length > 0)
+  if (suits.length === 0) return hand[0]
+
+  // 有将定约不主动攻将牌（清将通常是庄家的活）；只剩将牌时再攻
+  let pool = suits.filter((x) => !(trump && x.suit === trump))
+  if (pool.length === 0) pool = suits
+
+  const score = (x: { suit: Suit; cards: CardT[] }) => {
+    const cards = x.cards
+    const top = cards[0]
+    const second = cards[1]
+    let s = cards.length * 10
+    s += hcpOf(cards) * 2
+    // 连张大牌（AK / KQ / QJ / J10）攻顶张，既不送墩又能建立赢墩
+    if (second && top.rank >= 11 && top.rank === second.rank + 1) s += 25
+    // 孤 A（无 K）不首攻：保留进手，避免白送一墩
+    if (top.rank === 14 && (!second || second.rank < 13)) s -= trump === null ? 12 : 30
+    // 单张大牌容易被将吃或浪费
+    if (cards.length === 1 && top.rank >= 11) s -= 12
+    return s
+  }
+  pool.sort((a, b) => score(b) - score(a))
+  const chosen = pool[0].cards
+
+  if (chosen.length >= 2 && chosen[0].rank >= 11 && chosen[0].rank === chosen[1].rank + 1) return chosen[0]
+  // 孤 A 改攻第二张，把 A 留作进手
+  if (chosen.length >= 2 && chosen[0].rank === 14 && chosen[1].rank < 13) return chosen[1]
+  if (chosen.length >= 4) return chosen[3] // 长四
+  return lowest(chosen)
+}
+
+/** AI 选牌主入口（v1.9.0 增强） */
+export function choosePlay(hand: CardT[], trick: TrickPlay[], trump: Suit | null, seat: Seat, ctx: PlayContext = {}): CardT {
+  const legal = legalPlays(hand, trick)
+  if (legal.length === 1) return legal[0]
+  if (trick.length === 0) {
+    const openingLead = (ctx.played?.length ?? 0) === 0
+    return leadCard(hand, trump, ctx, openingLead)
+  }
+
+  const led = trick[0].card.suit
+  const partnerWinning = trickWinner(trick, trump) === partnerOf(seat)
+  const follow = legal.filter((c) => c.suit === led)
+
+  if (follow.length > 0) {
+    const low = lowest(follow)
+    if (partnerWinning) return low // 同伴已赢：不盖同伴，放小保留大牌
+    const winners = follow.filter((c) => wouldWin(trick, seat, c, trump))
+    if (winners.length === 0) return low
+    // 第二家放低：只有最小跟牌本身就能便宜赢墩时才出它（此时 low 就是最小赢张），
+    // 否则绝不拿 K/A 去盖对手领出的牌（旧 AI 的主要漏墩点）。
+    if (trick.length === 1) return low
+    // 第三家 / 第四家：用能赢的最小张；是确定赢张也照赢，不白送这一墩
+    return lowest(winners)
+  }
+
+  // 缺门：能赢则将吃，否则垫牌
+  if (trump && !partnerWinning) {
+    const trumps = legal.filter((c) => c.suit === trump)
+    const ruffWinners = trumps.filter((c) => wouldWin(trick, seat, c, trump))
+    if (ruffWinners.length > 0) {
+      const ruff = lowest(ruffWinners)
+      // 用大将牌将吃、且外面还有更大将牌可能被超将吃时不划算 → 改为垫牌保留将牌
+      const expensive = ruff.rank >= 12 && outstandingHigher(trump, ruff.rank, hand, trick, ctx) > 0
+      if (!expensive) return ruff
+    }
+  }
+
+  // 垫牌：按「可丢弃程度」打分，优先垫短套小牌；保留确定赢张、大牌、长套与将牌
+  const nonTrump = legal.filter((c) => c.suit !== trump)
+  const pool = nonTrump.length > 0 ? nonTrump : legal
+  const discardCost = (c: CardT) => {
+    let s = 0
+    if (c.suit === trump) s += 200
+    if (isBoss(c, hand, trick, ctx)) s += 60
+    s += Math.max(0, c.rank - 10) * 8
+    s += suitCount(hand, c.suit) * 2
+    return s
+  }
+  return [...pool].sort((a, b) => discardCost(a) - discardCost(b))[0]
 }
 
 // 供 UI：叫品是否人为约定（用于提醒标记）

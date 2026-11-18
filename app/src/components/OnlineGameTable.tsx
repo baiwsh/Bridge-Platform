@@ -16,7 +16,7 @@ const DIR_CN: Seat[] = ['N', 'E', 'S', 'W']
 export default function OnlineGameTable({ tableId, onExit }: { tableId: string; onExit: () => void }) {
   const { view, send, lastError, connected } = useSocket()
   const [infoIdx, setInfoIdx] = useState<number | null>(null) // 查看叫品含义
-  const [reviewing, setReviewing] = useState(false) // 收起结果卡回顾本副
+  const [reviewing, setReviewing] = useState(true) // v1.9.0：结算后默认停在牌面复盘，点「查看结果卡」看结果卡
 
   // 打开牌桌页即订阅该桌视图（未入座也可看到大厅阶段）
   useEffect(() => {
@@ -33,9 +33,9 @@ export default function OnlineGameTable({ tableId, onExit }: { tableId: string; 
     [impMode, v]
   )
   const boardNo = v?.boardNo
-  // 进入新一副后自动退出回顾模式并关掉含义弹卡
+  // 进入新一副后自动回到复盘牌面并关掉含义弹卡
   useEffect(() => {
-    setReviewing(false)
+    setReviewing(true)
     setInfoIdx(null)
   }, [boardNo])
 
@@ -195,21 +195,19 @@ export default function OnlineGameTable({ tableId, onExit }: { tableId: string; 
         )}
 
         <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-          {v.phase === 'bidding' ? null : v.phase === 'scored' && v.result ? (
-            reviewing ? null : (
-              <ResultCard
-                row={v.result}
-                boardNo={v.boardNo}
-                boards={v.boards}
-                nsTotal={nsTotal}
-                gameOver={v.gameOver}
-                onNext={() => send({ t: 'next' })}
-                onRestart={() => send({ t: 'restart' })}
-                onExit={() => { if (mySeat) send({ t: 'leave' }); else send({ t: 'unwatch' }); onExit() }}
-                spectator={!mySeat}
-                onReview={() => setReviewing(true)}
-              />
-            )
+          {v.phase === 'bidding' ? null : v.phase === 'scored' && v.result && !reviewing ? (
+            <ResultCard
+              row={v.result}
+              boardNo={v.boardNo}
+              boards={v.boards}
+              nsTotal={nsTotal}
+              gameOver={v.gameOver}
+              onNext={() => send({ t: 'next' })}
+              onRestart={() => send({ t: 'restart' })}
+              onExit={() => { if (mySeat) send({ t: 'leave' }); else send({ t: 'unwatch' }); onExit() }}
+              spectator={!mySeat}
+              onReview={() => setReviewing(true)}
+            />
           ) : (
             <div className="flex flex-col items-center gap-2">
               {v.contract && (
@@ -264,11 +262,12 @@ export default function OnlineGameTable({ tableId, onExit }: { tableId: string; 
           </div>
         )}
 
-        {/* 回顾模式：收起结果卡后显示底部操作条 */}
+        {/* 复盘模式（v1.9.0 默认）：最后四张牌与四家牌无限期定格，点「下一副」才继续 */}
         {v.phase === 'scored' && reviewing && (
-          <div className="absolute bottom-2 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full bg-emerald-950/90 px-2 py-1.5 shadow-lg">
+          <div className="absolute bottom-2 left-1/2 z-20 flex max-w-[calc(100vw-1rem)] -translate-x-1/2 items-center gap-2 rounded-full bg-emerald-950/90 px-2 py-1.5 shadow-lg">
+            <span className="hidden whitespace-nowrap px-1 text-[11px] text-emerald-200/80 sm:inline">本副已暂停 · 可复盘</span>
             <Button size="sm" variant="ghost" className="h-7 px-2.5 text-xs text-emerald-100 hover:bg-emerald-800" onClick={() => setReviewing(false)}>
-              查看结果
+              查看结果卡
             </Button>
             {!mySeat ? (
               <Button size="sm" variant="ghost" className="h-7 px-2.5 text-xs text-emerald-100 hover:bg-emerald-800" onClick={() => { send({ t: 'unwatch' }); onExit() }}>

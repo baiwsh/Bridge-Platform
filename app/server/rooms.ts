@@ -37,8 +37,12 @@ const BOT_BID_MS = parseInt(process.env.BOT_BID_MS ?? '650')
 const BOT_PLAY_MS = parseInt(process.env.BOT_PLAY_MS ?? '750')
 /** 一墩收齐后停留多久再清台：默认 2 秒，留出看清四家出牌的时间（可用环境变量覆盖） */
 const TRICK_CLEAR_MS = parseInt(process.env.TRICK_CLEAR_MS ?? '2000')
-/** 本副最后一墩：4 张牌留在桌面便于复盘，默认 5 秒后再结算（可用环境变量覆盖） */
-const LAST_TRICK_MS = parseInt(process.env.LAST_TRICK_MS ?? '5000')
+/**
+ * 本副最后一墩的结算时机（v1.9.0）：默认 0 = 最后一张牌打出后**立即结算并无限期暂停**，
+ * 画面定格在最后四张牌，直到牌手点击「下一副」才重新发牌（scored 阶段服务端不设任何定时器）。
+ * 显式设为 >0 时恢复旧行为：延时该毫秒数再结算（仅供压测 / 特殊场景使用）。
+ */
+const LAST_TRICK_MS = parseInt(process.env.LAST_TRICK_MS ?? '0')
 
 interface SeatHolder {
   kind: 'human' | 'bot'
@@ -61,6 +65,8 @@ interface RoomGameState {
   contract: FinalContract | null
   trump: Suit | null
   trick: TrickPlay[]
+  /** 本副已打出的全部牌（含当前墩），供 AI 记牌推断剩余大牌（v1.9.0） */
+  playedCards: CardT[]
   tricksNS: number
   tricksEW: number
   passedOut: boolean
@@ -143,6 +149,19 @@ export class Room {
     if (!empty) return null
     this.seats[empty] = { kind: 'human', userId: user.id, name: user.nickname, color: user.color, online: true }
     return empty
+  }
+
+  /** v1.9.0：修改昵称后同步刷新牌桌上的座位显示名（只改名，不动座位归属与托管状态） */
+  renameUser(userId: string, nickname: string): boolean {
+    let changed = false
+    for (const s of SEATS) {
+      const h = this.seats[s]
+      if (h?.kind === 'human' && h.userId === userId && h.name !== nickname) {
+        h.name = nickname
+        changed = true
+      }
+    }
+    return changed
   }
 
   /** 旁观者接管 AI 座位：仅限纯 AI（真人托管中的座位不可接管） */
@@ -301,6 +320,7 @@ export class Room {
       contract: null,
       trump: null,
       trick: [],
+      playedCards: [],
       tricksNS: 0,
       tricksEW: 0,
       passedOut: false,
@@ -387,6 +407,7 @@ export class Room {
     const gs = this.gs!
     gs.hands = { ...gs.hands, [seat]: gs.hands[seat].filter((c) => cardId(c) !== cardId(card)) }
     gs.trick = [...gs.trick, { seat, card }]
+    gs.playedCards = [...gs.playedCards, card]
     if (gs.trick.length < 4) {
       gs.turn = nextSeat(seat)
       return
@@ -395,12 +416,16 @@ export class Room {
     const winNS = seatPartnership(winner) === 'NS'
     gs.tricksNS += winNS ? 1 : 0
     gs.tricksEW += winNS ? 0 : 1
-    // 最后一墩：4 张牌先留在桌面 LAST_TRICK_MS 便于复盘，计时结束后由 schedule 结算
-    if (gs.hands.N.length === 0 && gs.contract) return
+    // v1.9.0：最后一墩立即结算并无限期暂停（四张牌 + 四家牌留在桌面复盘），
+    // 直到牌手点击「下一副」由 next() 重新发牌。LAST_TRICK_MS>0 时才交回 schedule 延时结算。
+    if (gs.hands.N.length === 0 && gs.contract) {
+      if (LAST_TRICK_MS <= 0) this.finishBoard()
+      return
+    }
     gs.turn = winner
   }
 
-  /** 本副结算：算分、写记分板、整场收尾。由 schedule 在「最后一墩停留 5 秒」后调用 */
+  /** 本副结算：算分、写记分板、整场收尾。v1.9.0 起由 applyPlay 在最后一墩立即调用 */
   private finishBoard() {
     const gs = this.gs
     if (!gs || !gs.contract || gs.phase !== 'play') return
@@ -467,7 +492,11 @@ export class Room {
     if (gs.phase === 'bidding') {
       if (!this.botDriven(gs.turn)) return
       this.timer = setTimeout(() => {
-        const call = chooseBid(gs.hands[gs.turn], gs.auction, gs.turn, this.system)
+        const call = chooseBid(gs.hands[gs.turn], gs.auction, gs.turn, this.system, {
+          vul: gs.vul,
+          scoring: this.scoring,
+          boardNo: this.boardNo,
+        })
         this.applyBid(call)
         this.onChange()
         this.schedule()
@@ -477,14 +506,24 @@ export class Room {
 
     if (gs.phase === 'play') {
       if (gs.trick.length === 4) {
-        // 最后一墩停留 5 秒便于复盘，其余墩停留 2 秒后清台
         const last = gs.hands.N.length === 0 && !!gs.contract
+        if (last) {
+          // v1.9.0 默认已在 applyPlay 里立即结算（phase 变 scored），此处不再设任何定时器：
+          // 牌面无限期定格，等牌手点「下一副」。仅当显式设置 LAST_TRICK_MS>0 时延时结算。
+          if (LAST_TRICK_MS > 0) {
+            this.timer = setTimeout(() => {
+              this.finishBoard()
+              this.onChange()
+              this.schedule()
+            }, LAST_TRICK_MS)
+          }
+          return
+        }
         this.timer = setTimeout(() => {
-          if (last) this.finishBoard()
-          else gs.trick = []
+          gs.trick = []
           this.onChange()
           this.schedule()
-        }, last ? LAST_TRICK_MS : TRICK_CLEAR_MS)
+        }, TRICK_CLEAR_MS)
         return
       }
       const turn = gs.turn
@@ -494,11 +533,38 @@ export class Room {
       if (this.proxyBy && (turn === gs.contract!.declarer || turn === dummy)) return
       if (!this.botDriven(decider)) return
       this.timer = setTimeout(() => {
-        const card = choosePlay(gs.hands[turn], gs.trick, gs.trump, turn)
+        const card = choosePlay(gs.hands[turn], gs.trick, gs.trump, turn, this.playContext(turn))
         this.applyPlay(turn, card)
         this.onChange()
         this.schedule()
       }, BOT_PLAY_MS)
+    }
+  }
+
+  /**
+   * 给 AI 的「合法可得信息」上下文（v1.9.0）：已出的牌、定约与庄家、局况、记分制、
+   * 以及庄家一方才能看到的两手牌。防守方不会拿到同伴/对手的暗牌，避免 AI 作弊。
+   */
+  private playContext(seat: Seat) {
+    const gs = this.gs!
+    const c = gs.contract
+    if (!c) return {}
+    const declarer = c.declarer
+    const dummy = partnerOf(declarer)
+    const mySideIsDeclarer = seatPartnership(seat) === seatPartnership(declarer)
+    return {
+      played: gs.playedCards,
+      declarer,
+      strain: c.strain,
+      vul: gs.vul,
+      scoring: this.scoring,
+      tricksNS: gs.tricksNS,
+      tricksEW: gs.tricksEW,
+      boardNo: this.boardNo,
+      // 庄家方同时能看到自己的手牌与明手牌（桥牌规则里明手牌本就是公开的）
+      ...(mySideIsDeclarer
+        ? { partnerHand: seat === declarer ? gs.hands[dummy] : gs.hands[declarer] }
+        : {}),
     }
   }
 
@@ -633,6 +699,15 @@ export class TableManager {
   summaries(): TableSummary[] {
     // 隐藏房（每日赛）不进大厅列表
     return [...this.rooms.values()].filter((r) => !r.hidden).map((r) => r.summary())
+  }
+
+  /** v1.9.0：昵称修改后刷新所有牌桌的座位名并广播最新视图 */
+  renameUser(userId: string, nickname: string) {
+    let changed = false
+    for (const r of this.rooms.values()) {
+      if (r.renameUser(userId, nickname)) changed = true
+    }
+    if (changed) this.emitChange()
   }
 
   socketOpened(userId: string) {
